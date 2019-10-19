@@ -24,3 +24,13 @@ I am using this controller for a 500W drill press with variable speed 600-3500rp
 # First breadboard prototype
 
 [![Prototype](https://github.com/sascha432/motor_controller/blob/master/docs/images/prototype_tn.jpg)](https://raw.githubusercontent.com/sascha432/motor_controller/master/docs/images/prototype.jpg)
+
+# STL files for the drill press
+
+[Remix of a great drill press](https://www.thingiverse.com/thing:3693804)
+
+[STL download](https://raw.githubusercontent.com/sascha432/motor_controller/master/stl/drill_press_stl.zip)
+
+[![Drill press 1](https://github.com/sascha432/motor_controller/blob/master/docs/images/dill_press_1_tn.jpg)](https://raw.githubusercontent.com/sascha432/motor_controller/master/docs/images/dill_press_1.jpg)
+
+[![Drill press 2](https://github.com/sascha432/motor_controller/blob/master/docs/images/dill_press_2_tn.jpg)](https://raw.githubusercontent.com/sascha432/motor_controller/master/docs/images/dill_press_2.jpg)
