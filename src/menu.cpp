@@ -23,7 +23,7 @@ void Menu::display() {
 
     // scrollbar
     _display.drawRoundRect(SCREEN_WIDTH - 8, 0, 8, SCREEN_HEIGHT, 3, WHITE);
-    uint8_t y = 2 + (_position * (SCREEN_HEIGHT - 5) / _size);
+    uint8_t y = 2 + (_position * (SCREEN_HEIGHT - 6) / _size);
     _display.fillRoundRect(SCREEN_WIDTH - 7, y, 6, 6, 3, WHITE);
 
     _display.display();
