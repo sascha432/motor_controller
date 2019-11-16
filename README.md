@@ -6,6 +6,7 @@ I am using this controller for a 500W drill press with variable speed 600-3500rp
 
 * Input voltage 13.5-36V
 * DC Motor controller 20A continuously, 31.25kHz PWM
+* 1.2A MOSFET driver
 * RPM or Voltage speed control
 * Opto Interrupter for RPM sensing
 * Adjustable current limit 1-40A
@@ -16,6 +17,8 @@ I am using this controller for a 500W drill press with variable speed 600-3500rp
 * OLED display and rotary encoder, start/stop button
 
 # PCB and schematics
+
+[![PCB Rev1.0](https://github.com/sascha432/motor_controller/blob/master/docs/images/pcb1_tn.jpg)](https://raw.githubusercontent.com/sascha432/motor_controller/master/docs/images/pcb1.jpg)
 
 ![PCB](https://github.com/sascha432/motor_controller/blob/master/docs/images/PCB.jpg)
 

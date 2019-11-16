@@ -120,6 +120,9 @@ void set_motor_speed(int speed) {
 
 // setup and clear display
 void setup_display() {
+
+    delay(500); // the display needs some time to power up...
+
     if (display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDRESS)) {
         display.setTextColor(WHITE);
         display.cp437(true);
@@ -130,7 +133,7 @@ void setup_display() {
     }
     else {
         ui_data.refresh_timer = ~0; // disables refresh_display()
-        debug_printf_P(PSTR("SSD1306 error\n"));
+        Serial.println(F("SSD1306 error"));
     }
 }
 
@@ -333,7 +336,7 @@ void menu_display_value() {
 }
 
 bool update_speed() {
-    auto value = -knob.readAndReset();
+    auto value = knob.readAndReset() * KNOB_INVERTED;
     int32_t change = value * (abs(value / KNOB_ACCELERATION) + 1);
     if (change < 0) {
         if (data.set_point_input + change > POTI_MIN) {
@@ -367,7 +370,7 @@ void knob_released(Button& btn, uint16_t duration) {
         }
         else if (menu.isActive()) {
             menu.exit();
-            knob.write(menu.getPosition() * KNOW_MENU_MULTIPLIER + KNOB_MENU_CENTER);
+            knob.write(menu.getPosition() * KNOB_MENU_MULTIPLIER + KNOB_MENU_CENTER);
             menu_reset_timer();
         }
         else {
@@ -378,7 +381,7 @@ void knob_released(Button& btn, uint16_t duration) {
     }
     else {
         menu.open();
-        knob.write(menu.getPosition() * KNOW_MENU_MULTIPLIER + KNOB_MENU_CENTER);
+        knob.write(menu.getPosition() * KNOB_MENU_MULTIPLIER + KNOB_MENU_CENTER);
         menu_reset_timer();
     }
 }
@@ -412,16 +415,16 @@ void read_knob() {
                 }
                 break;
             case MENU_LED:
-                value = knob.readAndReset();
+                value = knob.readAndReset() * KNOB_INVERTED;
                 if (value != 0) {
-                    int16_t new_value = data.led_brightness - value;
+                    int16_t new_value = data.led_brightness + value;
                     data.led_brightness = max(0, min(255, new_value));
                     set_led_brightness();
                     menu_reset_timer();
                 }
                 break;
             case MENU_CURRENT:
-                value = -knob.readAndReset();
+                value = knob.readAndReset() * KNOB_INVERTED;
                 if (value != 0) {
                     int16_t new_value = data.current_limit + value;
                     if (data.current_limit >= CURRENT_LIMIT_MAX && value > 0) {
@@ -435,7 +438,7 @@ void read_knob() {
                 }
                 break;
             case MENU_STALL:
-                value = -knob.readAndReset();
+                value = knob.readAndReset() * KNOB_INVERTED;
                 if (value != 0) {
                     int16_t new_value = data.max_stall_time + (value * 5);
                     data.max_stall_time = max(STALL_TIME_MIN, min(STALL_TIME_MAX, new_value));
@@ -458,7 +461,7 @@ void read_knob() {
         menu_display_value();
     }
     else if (menu.isOpen()) {
-        menu.setPosition(knob.read() / KNOW_MENU_MULTIPLIER);
+        menu.setPosition(knob.read() / KNOB_MENU_MULTIPLIER);
         menu_reset_timer();
     }
     else {
@@ -537,6 +540,7 @@ void setup() {
 
     char message[16];
     set_version(message, sizeof(message));
+    Serial.println(message);
     display_message(message, DISPLAY_BOOT_VERSION_TIMEOUT, 1);
 }
 

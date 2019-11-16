@@ -23,33 +23,33 @@
 // pins
 
 // always use set_motor_speed() to change PIN_MOTOR_PWM or PIN_BRAKE to avoid damage of the motor controller
-#define PIN_MOTOR_PWM                           11
-#define PIN_BRAKE                               9
+#define PIN_MOTOR_PWM                           11          // D11/PB3/15
+#define PIN_BRAKE                               7           // D7/PD7/11
 
-#define PIN_LED_DIMMER                          5
-#define PIN_CURRENT_LIMIT                       6
-#define PIN_CURRENT_LIMIT_OVERRIDE              10
+#define PIN_LED_DIMMER                          5           // D5/PD5/9
+#define PIN_CURRENT_LIMIT                       6           // D6/PD6/10
+#define PIN_CURRENT_LIMIT_OVERRIDE              10          // D10/PB2/14
 
-#define PIN_RPM_SIGNAL                          8
-#define PIN_BUTTON1                             7
-#define PIN_BUTTON2                             4
-#define PIN_ROTARY_ENC_CLK                      2
-#define PIN_ROTARY_ENC_DT                       3
-#define PIN_VOLTAGE                             A0
+#define PIN_RPM_SIGNAL                          8           // D8/PB0/12
+#define PIN_BUTTON1                             9           // D9/PB1/13
+#define PIN_BUTTON2                             4           // D4/PD4/2
+#define PIN_ROTARY_ENC_CLK                      2           // D2/PD2/32
+#define PIN_ROTARY_ENC_DT                       3           // D3/PD3/1
+#define PIN_VOLTAGE                             A0          // A0/PC0/23
 
-#define MCU_VOLTAGE                            5.0
+#define MCU_VOLTAGE                             5.0
 
 // current limit
-#define CURRENT_LIMIT_MIN                       6       // ~1.0A
+#define CURRENT_LIMIT_MIN                       6           // ~1.0A
 // max. ~230
-#define CURRENT_LIMIT_MAX                       220     // ~38.4A
+#define CURRENT_LIMIT_MAX                       220         // ~38.4A
 #define CURRENT_LIMIT_DISABLED                  255
 // DAC @ 980Hz, 1020µs / 3.99µs steps
 // resistor divdivers, needs to be adjusted to real values
 #define CURRENT_LIMIT_DAC_R1                    100.0
 #define CURRENT_LIMIT_DAC_R2                    1000.0
 #define CURRENT_LIMIT_DAC_R3                    27.0
-#define CURRENT_LIMIT_SHUNT                     3       // 0.003R / 3 milliohm
+#define CURRENT_LIMIT_SHUNT                     3           // 0.003R / 3 milliohm
 // mV to current
 #define CURRENT_LIMIT_SHUNT_mV_TO_A(value)      (value / CURRENT_LIMIT_SHUNT)
 // max. voltage of the DAC ~4.5563V
@@ -61,13 +61,14 @@
 
 
 // LED PWM 980Hz for MT3608
-#define LED_MIN_PWM                             13 // 5%
+#define LED_MIN_PWM                             (255 * 0.2)         // 20%
 
 // UI
 #define KNOB_ACCELERATION                       5
-#define KNOW_MENU_MULTIPLIER                    -5
+#define KNOB_INVERTED                           1                       // -1 to invert
+#define KNOB_MENU_MULTIPLIER                    (5 * KNOB_INVERTED)    // negative to invert the menu only
 
-#define KNOB_MENU_CENTER                        (MENU_COUNT * 1000L * abs(KNOW_MENU_MULTIPLIER))
+#define KNOB_MENU_CENTER                        0//(MENU_COUNT * 1000L * abs(KNOB_MENU_MULTIPLIER))
 
 // poti
 #define POTI_MIN                                0
@@ -112,7 +113,7 @@
 #define MAX_DUTY_CYCLE                          255
 
 #ifndef HAVE_VOLTAGE_DETECTION
-#define HAVE_VOLTAGE_DETECTION                  1
+#define HAVE_VOLTAGE_DETECTION                  0
 // resistor divider 10K/100K, needs to be adjusted to real values
 #define VOLTAGE_DETECTION_R1                    10.5f
 #define VOLTAGE_DETECTION_R2                    100.0f
