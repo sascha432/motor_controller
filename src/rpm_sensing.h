@@ -5,11 +5,12 @@
 #pragma once
 
 #include <Arduino.h>
-
 #include "main.h"
 
-// wheel with 48 slots
-#define RPM_SENSE_PULSES_PER_TURN               48
+#ifndef RPM_SENSE_PULSES_PER_TURN
+// wheel with 80 slots
+#define RPM_SENSE_PULSES_PER_TURN               80
+#endif
 
 // convert rpm to pulse length (µs)
 #define RPM_SENSE_RPM_TO_US(rpm)                (1000000UL * 60UL / (rpm * (uint32_t)RPM_SENSE_PULSES_PER_TURN))
@@ -62,7 +63,7 @@ typedef void (*capture_timer_callback_t)();
 
 void reset_capture_timer();
 void init_capture_timer();
-void capture_timer_set_callback(capture_timer_callback_t);
+void capture_timer_set_callback(capture_timer_callback_t callback);
 uint32_t capture_timer_last_signal_millis();
 uint32_t capture_timer_get_integral();
 uint32_t capture_timer_get_micros();

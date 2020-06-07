@@ -2,6 +2,7 @@
  * Author: sascha_lammers@gmx.de
  */
 
+#include "main.h"
 #include "pid_control.h"
 #include "rpm_sensing.h"
 #include "helpers.h"
@@ -18,40 +19,91 @@ float pid_tune_increment = 0;
 
 #endif
 
-// PID controller
-PidController_t pid = { 20, 0.0035, 0.055 };
-const float pid_dt_mul = 1 / 1000000.0 * 1;
-const float output_multiplier = 0.042;
-// float voltage_multiplier = 1.0;
-// long previous_error;
-// MicrosTimer pid_last_update;
-// uint16_t set_point_rpm_pulse_length = 0;
-// uint8_t duty_cycle = 0;
-#if DEBUG
-bool pid_enable_serial_output = false;
-#endif
+PidController pid;
 
-void reset_pid() {
-    pid.duty_cycle = MIN_DUTY_CYCLE;
-    pid.integral = 0;
-    pid.previous_error = 0;
-    pid.last_update.start();
+PidController::PidController() : integral(0), previous_error(0), duty_cycle(), set_point_rpm_pulse_length(0)
+{
+    resetPidValues();
 }
 
-void update_pid_controller() {
+void PidController::resetPidValues()
+{
+    Kp = 20;
+    Ki = 0.0035;
+    Kd = 0.055;
+}
 
+void PidController::setPidValues(float _Kp, float _Ki, float _Kd)
+{
+    Kp = _Kp;
+    Ki = _Ki;
+    Kp = _Kp;
+}
+
+void PidController::getPidValues(float &_Kp, float &_Ki, float &_Kd) const
+{
+    _Kp = Kp;
+    _Ki = Ki;
+    _Kp = Kp;
+}
+
+void PidController::updatePidValue(uint8_t num, int8_t steps)
+{
+    float *output;
+    float value;
+    switch(num) {
+        case 0:
+            output = &Kp;
+            value = 0.1;
+            break;
+        case 1:
+            output = &Ki;
+            value = 0.00001;
+            break;
+        case 2:
+            output = &Kd;
+            value = 0.0001;
+            break;
+        default:
+            return;
+    }
+    *output += value * steps;
+}
+
+void PidController::printValues(Print &buffer) const
+//void PidController::printValues(char *buffer, uint8_t len) const
+{
+    //PrintBuffer buf(buffer, len);
+    buffer.print(F("PID "));
+    buffer.print(Kp, 1);
+    buffer.print(' ');
+    buffer.print(Ki, 5);
+    buffer.print(' ');
+    buffer.println(Kd, 4);
+}
+
+void PidController::reset()
+{
+    duty_cycle = VELOCITY_START_DUTY_CYCLE;
+    integral = 0;
+    previous_error = 0;
+    last_update.start();
+}
+
+void PidController::update()
+{
     auto _micros = micros();
-    float delta_t = pid.last_update.getTime(_micros) * pid_dt_mul;
+    float delta_t = last_update.getTime(_micros) * dtMultiplier;
 #if DEBUG_PID_CONTROLLER
-    uint16_t delta_t_short = pid_last_update.getTime(_micros);
+    uint16_t delta_t_short = last_update.getTime(_micros);
 #endif
-    pid.last_update.start(_micros);
+    last_update.start(_micros);
 
     auto measured_pulse_length = capture_timer_get_micros();
     ui_data.display_pulse_length_integral = (ui_data.display_pulse_length_integral * DISPLAY_RPM_MULTIPLIER + measured_pulse_length) / (DISPLAY_RPM_MULTIPLIER + 1);
 
-    if (data.motor_state == ON) {
-        int32_t error = measured_pulse_length - pid.set_point_rpm_pulse_length; // values are inverted
+    if (data.motor_state == MotorStateEnum::ON) {
+        int32_t error = measured_pulse_length - set_point_rpm_pulse_length; // values are inverted
 #if DEBUG
         if (abs(error) > 1000000) {
             Serial_printf_P(PSTR("ERR %lu, %lu, %u\n"), error, measured_pulse_length, set_point_rpm_pulse_length);
@@ -59,21 +111,21 @@ void update_pid_controller() {
         }
 #endif
 
-        pid.integral = pid.integral + error * delta_t;
-        float derivative = (error - pid.previous_error) / delta_t;
+        integral = integral + error * delta_t;
+        float derivative = (error - previous_error) / delta_t;
 
-        int32_t output = (pid.Kp * error + pid.Ki * pid.integral + pid.Kd * derivative) * output_multiplier;
+        int32_t output = (Kp * error + Ki * integral + Kd * derivative) * outputMultiplier;
 //        int32_t output = (Kp * error + Ki * integral + Kd * derivative) * voltage_multiplier;
 #if DEBUG
         if (abs(output) > 10000) {
             Serial_printf_P(PSTR("OVF %ld\n"), output);
         }
 #endif
-        pid.previous_error = error;
+        previous_error = error;
 
-        pid.duty_cycle = max(MIN_DUTY_CYCLE, min(output, MAX_DUTY_CYCLE));
-        ui_data.display_duty_cycle_integral = (ui_data.display_duty_cycle_integral * DISPLAY_DUTY_CYCLE_MULTIPLIER + pid.duty_cycle) / (DISPLAY_DUTY_CYCLE_MULTIPLIER + 1);
-        set_motor_speed(pid.duty_cycle);
+        duty_cycle = max(MIN_DUTY_CYCLE, min(output, MAX_DUTY_CYCLE));
+        ui_data.display_duty_cycle_integral = (ui_data.display_duty_cycle_integral * DISPLAY_DUTY_CYCLE_MULTIPLIER + duty_cycle) / (DISPLAY_DUTY_CYCLE_MULTIPLIER + 1);
+        set_motor_speed(duty_cycle);
     }
 
 #if DEBUG_PID_CONTROLLER
@@ -96,4 +148,3 @@ void update_pid_controller() {
     }
 #endif
 }
-

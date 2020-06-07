@@ -2,6 +2,7 @@
  * Author: sascha_lammers@gmx.de
  */
 
+#include "main.h"
 #include "menu.h"
 
 Menu::Menu(uint8_t count, Adafruit_SSD1306 &display) : _position(0), _size(count), _state(0), _display(display) {
@@ -38,6 +39,21 @@ void Menu::add(uint8_t index, PGM_P name) {
     _items[index] = name;
 }
 
+bool Menu::isOpen() const {
+    return _state != 0;
+}
+
+bool Menu::isActive() const {
+    return _state == 2;
+}
+
+bool Menu::isMainMenuActive() const {
+    return _state == 1;
+}
+
+void Menu::close() {
+    _state = 0;
+}
 
 void Menu::open() {
     _state = 1;
@@ -54,11 +70,19 @@ void Menu::down() {
     display();
 }
 
-void Menu::setPosition(uint8_t position) {
-    _position = position % _size;
-    display();
+bool Menu::setPosition(uint8_t position) {
+    position = position % _size;
+    if (_position != position) {
+        _position = position;
+        display();
+        return true;
+    }
+    return false;
 }
 
+void Menu::enter() {
+    _state = 2;
+}
 
 void Menu::exit() {
     _state = 1;

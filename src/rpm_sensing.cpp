@@ -2,6 +2,7 @@
  * Author: sascha_lammers@gmx.de
  */
 
+#include "main.h"
 #include "rpm_sensing.h"
 #include "DebugBuffer.h"
 #include "timer.h"

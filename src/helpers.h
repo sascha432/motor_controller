@@ -110,23 +110,57 @@ public:
         return 0;
     }
 
-    void printTrimmedFloat(float f) {
-        clear();
+    void printTrimmed(float f) {
         print(f, 6);
         trimFloat();
     }
 
+    void clarPrintTrimmed(float f) {
+        clear();
+        printTrimmed(f);
+    }
+
     void trimFloat() {
-        char *end = _buffer + _pos;
-        while(--end > _buffer + 1) {
-            if (*end == '0' && *(end - 1) != '.') {
-                *end = 0;
-                _pos--;
-            }
-            else {
-                break;
-            }
-        }
+        // trims all zeros or 1 digit followed by at least 3 zeros
+        // char *end = _buffer + _pos;
+        // uint8_t zero_counter = 0;
+        // while(--end > _buffer + 1) {
+        //     if (*end == '0' && *(end - 1) != '.') {
+        //         if (zero_counter) {
+        //             zero_counter++;
+        //         } else {
+        //             *end = 0;
+        //             _pos--;
+        //         }
+        //     }
+        //     else {
+        //         if (!zero_counter) { // got 1-9, start counting zeros
+        //             zero_counter++;
+        //         }
+        //         else if (zero_counter >= 3) { // got 1-9 again
+        //             _pos -= zero_counter;
+        //             _buffer[_pos + 1] = 0;
+        //             break;
+        //         }
+        //         else {
+        //             break;
+        //         }
+        //     }
+        // }
+        // char *end = _buffer + _pos;
+        // while(--end > _buffer + 1) {
+        //     if (*end == '0' && *(end - 1) != '.') {
+        //         *end = 0;
+        //         _pos--;
+        //     }
+        //     else {
+        //         break;
+        //     }
+        // }
+    }
+
+    char *getBuffer() {
+        return _buffer;
     }
 
 private:

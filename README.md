@@ -4,7 +4,7 @@ Firmware for DC motor controller https://easyeda.com/sascha23095123423/dc-motor-
 
 I am using this controller for a 500W drill press with variable speed 600-3500rpm.
 
-* Input voltage 13.5-36V
+* Input voltage 13.5-40V
 * DC Motor controller 20A continuously, 31.25kHz PWM
 * 1.2A MOSFET driver
 * RPM or Voltage speed control
@@ -16,7 +16,7 @@ I am using this controller for a 500W drill press with variable speed 600-3500rp
 * LED driver 14-26V, 350mA, 10W, dimmable
 * OLED display and rotary encoder, start/stop button
 
-# PCB and schematics
+## PCB and schematics
 
 [![PCB Rev1.0](https://github.com/sascha432/motor_controller/blob/master/docs/images/pcb1_tn.jpg)](https://raw.githubusercontent.com/sascha432/motor_controller/master/docs/images/pcb1.jpg)
 
@@ -24,11 +24,11 @@ I am using this controller for a 500W drill press with variable speed 600-3500rp
 
 [![Schematics](https://github.com/sascha432/motor_controller/blob/master/docs/images/schematics_tn.png)](https://raw.githubusercontent.com/sascha432/motor_controller/master/docs/images/schematics.png)
 
-# First breadboard prototype
+## First breadboard prototype
 
 [![Prototype](https://github.com/sascha432/motor_controller/blob/master/docs/images/prototype_tn.jpg)](https://raw.githubusercontent.com/sascha432/motor_controller/master/docs/images/prototype.jpg)
 
-# STL files for the drill press
+## STL files for the drill press
 
 [Remix of a great drill press](https://www.thingiverse.com/thing:3693804)
 

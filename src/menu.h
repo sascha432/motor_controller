@@ -16,42 +16,45 @@ class Menu {
 public:
 
     Menu(uint8_t count, Adafruit_SSD1306 &display);
+    inline Menu(MenuEnum count, Adafruit_SSD1306 &display) : Menu(static_cast<uint8_t>(count), display) {}
     ~Menu();
 
     void display();
     void displayTitle();
 
     void add(uint8_t index, PGM_P name);
-
-    bool isOpen() const {
-        return _state != 0;
+    inline void add(MenuEnum index, PGM_P name) {
+        add(static_cast<uint8_t>(index), name);
     }
 
-    bool isActive() const {
-        return _state == 2;
+    bool isOpen() const;
+    bool isClosed() const {
+        return !isOpen();
     }
-
+    bool isActive() const;
+    bool isMainMenuActive() const;
     void open();
-
-    void close() {
-        _state = 0;
-    }
+    void close();
 
     void up();
     void down();
-    void setPosition(uint8_t position);
-
-    uint8_t getPosition() const {
-        return _position;
+    bool setPosition(uint8_t position);
+    inline bool setPosition(MenuEnum position) {
+        return setPosition(static_cast<uint8_t>(position));
     }
 
-    uint8_t getSize() const {
+    uint8_t getPositionInt() const {
+        return _position;
+    }
+    inline MenuEnum getPosition() const {
+        return static_cast<MenuEnum>(_position);
+    }
+
+    inline uint8_t getSize() const {
         return _size;
     }
 
-    void enter() {
-        _state = 2;
-    }
+    void enter();
     void exit();
 
 private:

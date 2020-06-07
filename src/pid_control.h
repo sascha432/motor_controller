@@ -7,7 +7,22 @@
 #include "main.h"
 #include "timer.h"
 
-typedef struct {
+class PidController {
+public:
+    static constexpr float dtMultiplier = 1 / 1000000.0 * 1;
+    static constexpr float outputMultiplier = 0.042;
+
+    PidController();
+
+    void reset();
+    void update();
+
+    void resetPidValues();
+    void setPidValues(float Kp, float Ki, float Pd);
+    void getPidValues(float &Kp, float &Ki, float &Pd) const;
+    void updatePidValue(uint8_t num, int8_t steps);
+    void printValues(Print &buffer) const;
+
     float Kp, Ki, Kd;
     float integral;
     long previous_error;
@@ -15,13 +30,10 @@ typedef struct {
     uint16_t set_point_rpm_pulse_length;
     MicrosTimer last_update;
     // float voltage_multiplier;
-} PidController_t;
+};
 
-extern PidController_t pid;
+extern PidController pid;
 
 #if DEBUG
 extern bool pid_enable_serial_output;
 #endif
-
-void reset_pid();
-void update_pid_controller();
