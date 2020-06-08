@@ -16,6 +16,7 @@
 #include <Encoder.h>
 #include "main.h"
 #include "rpm_sensing.h"
+#include "interrupts.h"
 #include "pid_control.h"
 #include "timer.h"
 #include "DebugBuffer.h"
@@ -85,26 +86,6 @@ void write_eeprom() {
     }
 }
 
-
-#if PIN_CURRENT_LIMIT_INDICATOR
-
-void pciSetup(byte pin) {
-    *digitalPinToPCMSK(pin) |= bit(digitalPinToPCMSKbit(pin));
-    PCIFR |= bit(digitalPinToPCICRbit(pin));
-    PCICR |= bit(digitalPinToPCICRbit(pin));
-}
-
-volatile uint32_t current_limit_tripped = 0;
-volatile uint8_t *current_limit_pin;
-uint8_t current_limit_bit;
-
-ISR(PCINT0_vect) {
-    if (*current_limit_pin & current_limit_bit) {
-        current_limit_tripped = millis();
-    }
-}
-
-#endif
 
 void set_version(char *buffer, uint8_t size) {
     snprintf_P(buffer, size, PSTR("Version %u.%u.%u"), VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
@@ -207,8 +188,13 @@ void refresh_display() {
         ui_data.refresh_counter++;
 
         if (menu.isOpen()) {
-            menu.close();
-            write_eeprom();
+            if (menu.getPosition() == MenuEnum::MENU_INFO) {
+                menu_display_value();
+            }
+            else {
+                menu.close();
+                write_eeprom();
+            }
             return;
         }
 
@@ -274,20 +260,25 @@ void refresh_display() {
             }
         }
 
-#if PIN_CURRENT_LIMIT_INDICATOR
+#if HAVE_CURRENT_LIMIT
 
         if (current_limit_tripped) {
-            if (get_time_diff(current_limit_tripped, millis()) > 500) {   // display for 500ms
-                current_limit_tripped = 0;
-            }
-            else {
-                display.fillCircle(SCREEN_WIDTH - FONT_HEIGHT * 1 - 3, FONT_HEIGHT + 1, FONT_HEIGHT + 1, WHITE);
-                display.setTextSize(2);
-                display.setTextColor(INVERSE);
-                display.setCursor(SCREEN_WIDTH - FONT_HEIGHT * 2, 2);
-                display.print('C');
-                display.setTextColor(WHITE);
-            }
+            // motor_stop(MotorStateEnum::CURRENT_LIMIT);
+            Serial.print(F("Current limit @ "));
+            Serial.println(current_limit_tripped - data.motor_start_time);
+            current_limit_tripped = 0;
+
+            // if (get_time_diff(current_limit_tripped, millis()) > 500) {   // display for 500ms
+            //     current_limit_tripped = 0;
+            // }
+            // else {
+            //     display.fillCircle(SCREEN_WIDTH - FONT_HEIGHT * 1 - 3, FONT_HEIGHT + 1, FONT_HEIGHT + 1, WHITE);
+            //     display.setTextSize(2);
+            //     display.setTextColor(INVERSE);
+            //     display.setCursor(SCREEN_WIDTH - FONT_HEIGHT * 2, 2);
+            //     display.print('C');
+            //     display.setTextColor(WHITE);
+            // }
         }
 
 #endif
@@ -321,9 +312,17 @@ void display_message(char *message, uint16_t time, uint8_t size) {
     ui_data.refresh_timer = millis() + time;
 }
 
+
+
 // set RPM pulse length from poti value
 void calc_rpm_pulse_length() {
-    pid.set_point_rpm_pulse_length = RPM_SENSE_RPM_TO_US(POTI_TO_RPM(data.set_point_input));
+    auto rpm = POTI_TO_RPM(data.set_point_input);
+    pid.set_point_rpm_pulse_length = RPM_SENSE_RPM_TO_US(rpm);
+#if RPM_SENSE_AVERAGING_FACTOR
+    data.rpm_sense_average = (rpm * (rpm / RPM_SENSE_AVERAGING_FACTOR)) / 30000;
+    Serial.print("rpm_sense_average ");
+    Serial.println(data.rpm_sense_average);
+#endif
 }
 
 // set duty cycle from poti value
@@ -368,7 +367,6 @@ static void current_limit_str(char *message, uint8_t size) {
 
 #endif
 
-//26820
 void menu_display_value() {
     char message[16];
 
@@ -410,7 +408,7 @@ void menu_display_value() {
         display.println('V');
 #endif
 
-        ui_data.menuResetAutoCloseTimer();
+        ui_data.refresh_timer = millis() + 500;
     }
     else {
         menu.displayTitle();
@@ -664,6 +662,13 @@ void setup() {
     pinMode(PIN_BRAKE, OUTPUT);
 
     pinMode(PIN_CURRENT_LIMIT, OUTPUT);
+#if HAVE_CURRENT_LIMIT
+    pinMode(PIN_CURRENT_LIMIT_INDICATOR, INPUT);
+#else
+    digitalWrite(PIN_CURRENT_LIMIT_OVERRIDE, HIGH);
+    pinMode(PIN_CURRENT_LIMIT_OVERRIDE, OUTPUT);
+#endif
+
     pinMode(PIN_LED_DIMMER, OUTPUT);
 
 	pinMode(PIN_RPM_SIGNAL, INPUT);
@@ -671,14 +676,13 @@ void setup() {
     pinMode(PIN_ROTARY_ENC_DT, INPUT);
     pinMode(PIN_ROTARY_ENC_CLK, INPUT);
 
-#if HAVE_VOLTAGE_DETECTION
-    pinMode(PIN_VOLTAGE, INPUT);
+#if HAVE_DEBUG_RPM_SIGNAL_OUT
+    digitalWrite(PIN_RPM_SIGNAL_DEBUG_OUT, LOW);
+    pinMode(PIN_RPM_SIGNAL_DEBUG_OUT, OUTPUT);
 #endif
 
-#if PIN_CURRENT_LIMIT_INDICATOR
-    current_limit_pin = portInputRegister(digitalPinToPort(PIN_CURRENT_LIMIT_INDICATOR));
-    current_limit_bit = digitalPinToBitMask(PIN_CURRENT_LIMIT_INDICATOR);
-    pciSetup(PIN_CURRENT_LIMIT_INDICATOR);
+#if HAVE_VOLTAGE_DETECTION
+    pinMode(PIN_VOLTAGE, INPUT);
 #endif
 
     button1.onPress(start_stop_button_pressed);
@@ -710,6 +714,10 @@ void setup() {
     // setup timer2 PWM
     TCCR2B = (TCCR2B & 0b11111000) | TIMER2_PRESCALER;
 
+#if HAVE_INTERRUPTS
+    setup_interrupts();
+#endif
+
     char message[16];
     set_version(message, sizeof(message));
     Serial.println(message);
@@ -738,6 +746,9 @@ void motor_stop(MotorStateEnum state) {
     case MotorStateEnum::STALLED:
         strcpy_P(message, _T(STALLED));
         break;
+    case MotorStateEnum::CURRENT_LIMIT:
+        strcpy_P(message, PSTR("CURRENT"));
+        break;
     case MotorStateEnum::BREAKING:
     default:
         strcpy_P(message, _T(BREAKING));
@@ -752,6 +763,7 @@ void motor_start() {
     cli();
     ui_data = UIData_t();
     data.motor_state = MotorStateEnum::ON;
+    data.motor_start_time = millis();
     reset_capture_timer();
     pid.reset();
     if (data.control_mode == ControlModeEnum::DUTY_CYCLE) {
@@ -786,6 +798,32 @@ void update_pid_cfg() {
 }
 
 void loop() {
+
+#if DEBUG_TRIGGERED_INTERRUPTS
+
+    cli();
+    if (GET_INTERRUPT_TRIGGER(current_limit_flag)) {
+        SET_INTERRUPT_TRIGGER(current_limit_flag, false);
+        sei();
+        Serial.println(F("current limit int"));
+    }
+    else {
+        sei();
+    }
+
+    cli();
+    if (GET_INTERRUPT_TRIGGER(rpm_sense_flag)) {
+        SET_INTERRUPT_TRIGGER(rpm_sense_flag, false);
+        sei();
+        Serial.print(micros());
+        Serial.print(' ');
+        Serial.println(F("rpm_sense_flag int"));
+    }
+    else {
+        sei();
+    }
+
+#endif
 
 #if DEBUG_INPUTS
 
@@ -845,6 +883,16 @@ void loop() {
                 setup_display();
                 break;
 #endif
+            case 'a':
+                data.rpm_sense_average++;
+                Serial.print(F("rpms_avg="));
+                Serial.println(data.rpm_sense_average);
+                break;
+            case 's':
+                data.rpm_sense_average--;
+                Serial.print(F("rpms_avg="));
+                Serial.println(data.rpm_sense_average);
+                break;
             case 'e':
                 // print_pid_cfg_serial();
                 pid.printValues(Serial);
@@ -862,9 +910,11 @@ void loop() {
             case 'r':
                 data.setControlMode(ControlModeEnum::PID);
                 break;
+#if HAVE_CURRENT_LIMIT
             case 't':
                 current_limit_tripped = millis();
                 break;
+#endif
             case '+':
             case '*':
                 data.set_point_input += POTI_RANGE / (ch == '*' ? 10 : 128);

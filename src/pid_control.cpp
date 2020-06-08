@@ -77,9 +77,9 @@ void PidController::printValues(Print &buffer) const
     buffer.print(F("PID "));
     buffer.print(Kp, 1);
     buffer.print(' ');
-    buffer.print(Ki, 5);
+    buffer.print(Ki, 4);
     buffer.print(' ');
-    buffer.println(Kd, 4);
+    buffer.println(Kd, 3);
 }
 
 void PidController::reset()

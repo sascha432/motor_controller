@@ -9,6 +9,7 @@
 Data_t::Data_t() :
     control_mode(ControlModeEnum::PID),
     motor_state(MotorStateEnum::OFF),
+    motor_start_time(0),
     brake_enaged(false),
     brake_enabled(true),
     pid_config(PidConfigEnum::OFF),
@@ -20,9 +21,9 @@ Data_t::Data_t() :
 #endif
     current_limit(CURRENT_LIMIT_DISABLED),
     max_stall_time(1000),
-    max_pwm(MAX_DUTY_CYCLE)
+    max_pwm(MAX_DUTY_CYCLE),
+    rpm_sense_average(4)
 {
-
 }
 
 void Data_t::copyTo(EEPROMData_t &eeprom_data)

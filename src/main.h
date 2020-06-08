@@ -24,13 +24,28 @@
 #define DEBUG_MOTOR_SPEED                       0
 #endif
 
+#ifndef DEBUG_TRIGGERED_INTERRUPTS
+#define DEBUG_TRIGGERED_INTERRUPTS              0
+#endif
+
 #ifndef HAVE_SERIAL_COMMANDS
-#define HAVE_SERIAL_COMMANDS                    0
+#define HAVE_SERIAL_COMMANDS                    1
 #endif
 
 #ifndef HAVE_LED_FADING
 // +162 byte code size
 #define HAVE_LED_FADING                         1
+#endif
+
+#ifndef HAVE_DEBUG_RPM_SIGNAL_OUT
+// output RPM signal on port PIN_RPM_SGINAL_DEBUG_OUT
+#define HAVE_DEBUG_RPM_SIGNAL_OUT               0
+#endif
+
+#ifndef HAVE_CURRENT_LIMIT
+// TODO not working yet
+// +328 byte code size
+#define HAVE_CURRENT_LIMIT                      0
 #endif
 
 // pins
@@ -40,28 +55,44 @@
 #define PIN_BRAKE                               7           // D7/PD7/11
 
 #define PIN_LED_DIMMER                          5           // D5/PD5/9
+
 #define PIN_CURRENT_LIMIT                       6           // D6/PD6/10
 #define PIN_CURRENT_LIMIT_OVERRIDE              10          // D10/PB2/14
-#ifndef PIN_CURRENT_LIMIT_INDICATOR
-#define PIN_CURRENT_LIMIT_INDICATOR             12          // D12
-#endif
-#if PIN_CURRENT_LIMIT_INDICATOR != 0 && PIN_CURRENT_LIMIT_INDICATOR != 12
-#error Verify that the PIN change interrupt PCINT0_vect is called
-#endif
+#define PIN_CURRENT_LIMIT_INDICATOR             12          // D12/PB4/MISO
 
 #define PIN_RPM_SIGNAL                          8           // D8/PB0/12
+#define PIN_RPM_SIGNAL_DEBUG_OUT                13          // D13/PB5/SCK
+
 #define PIN_BUTTON1                             9           // D9/PB1/13
 #define PIN_BUTTON2                             4           // D4/PD4/2
 #define PIN_ROTARY_ENC_CLK                      2           // D2/PD2/32
 #define PIN_ROTARY_ENC_DT                       3           // D3/PD3/1
+
 #define PIN_VOLTAGE                             A0          // A0/PC0/23
 
-#define MCU_VOLTAGE                             5.0
-
-#ifndef HAVE_CURRENT_LIMIT
-// +328 byte code size
-#define HAVE_CURRENT_LIMIT                      1
+// pin interrupt setup
+#if HAVE_CURRENT_LIMIT
+#if PIN_CURRENT_LIMIT_INDICATOR == 12
+#define PIN_CURRENT_LIMIT_INDICATOR_MASK        (1 << PINB4)
+#else
+#error add mask for PIN_CURRENT_LIMIT_INDICATOR, can only be PINB
 #endif
+#endif
+
+#if HAVE_DEBUG_RPM_SIGNAL_OUT
+#if PIN_RPM_SIGNAL == 8
+#define PIN_RPM_SIGNAL_MASK                     (1 << PINB0)
+#else
+#error add mask for PIN_RPM_SIGNAL, can only be PINB
+#endif
+#if PIN_RPM_SIGNAL_DEBUG_OUT == 13
+#define PIN_RPM_SIGNAL_DEBUG_OUT_MASK           (1 << PINB5)
+#else
+#error add mask for PIN_RPM_SIGNAL, can only be PINB
+#endif
+#endif
+
+#define MCU_VOLTAGE                             5.0
 
 // current limit
 #define CURRENT_LIMIT_MIN                       6           // ~1.0A
@@ -94,7 +125,7 @@
 
 
 // LED PWM 980Hz for MT3608
-#define LED_MIN_PWM                             ((uint8_t)(255 * 0.1))
+#define LED_MIN_PWM                             25
 #define LED_MAX_PWM                             255
 #define LED_MENU_SPEED                          3
 #define LED_FADE_TIME                           10
@@ -127,11 +158,63 @@
 #define RPM_MAX                                 4500
 
 #define STALL_TIME_MIN                          250
-#define STALL_TIME_MAX                          2500
+#define STALL_TIME_MAX                          5000
 
 // pulse length / RPM
 #define RPM_MIN_PULSE_LENGTH                    RPM_SENSE_US_TO_RPM(RPM_MAX)
 #define RPM_MAX_PULSE_LENGTH                    RPM_SENSE_US_TO_RPM(RPM_MIN)
+
+// dynamic averaging of the rpm values. 0 to disable
+// in case a 3D printed sensor is used and the pulses are not 100% even, this will
+// help to improve the reponse of the PID controller with low RPMs and make it
+// more smooth with high RPMs. can be tuned while the motor is running using the
+// serial console and HAVE_SERIAL_COMMANDS (key a/s)
+#define RPM_SENSE_AVERAGING_FACTOR              8
+// rpm    avg (factor 3)
+// >300   1
+// >426   2
+// >521   3
+// >600   4
+// >672   5
+// >735   6
+// >795   7
+// >849   8
+// rpm    avg (factor 5)
+// >390   1
+// >550   2
+// >672   3
+// >775   4
+// >868   5
+// >950   6
+// >1025  7
+// >1096  8
+// rpm    avg (factor 8)
+// >492   1
+// >696   2
+// >850   3
+// >984   4
+// >1096  5
+// >1200  6
+// >1297  7
+// >1388  8
+// rpm    avg (factor 15)
+// >675   1
+// >953   2
+// >1169  3
+// >1349  4
+// >1500  5
+// >1650  6
+// >1780  7
+// >1905  8
+// rpm    avg (factor 20)
+// >780   1
+// >1100  2
+// >1344  3
+// >1559  4
+// >1740  5
+// >1900  6
+// >2059  7
+// >2200  8
 
 // RPM sensing
 #define TIMER1_PRESCALER                        1
@@ -153,9 +236,14 @@
 #define HAVE_VOLTAGE_DETECTION                  1
 #endif
 // voltage divider 10K/100K, needs to be adjusted to real values to be accurate
-#define VOLTAGE_DETECTION_R1                    10.5f
+#define VOLTAGE_DETECTION_R1                    10.0f
 #define VOLTAGE_DETECTION_R2                    100.0f
-#define VOLTAGE_DETECTION_DIVIDER               ((VOLTAGE_DETECTION_R2 + VOLTAGE_DETECTION_R1) / VOLTAGE_DETECTION_R1)
+#ifndef VOLTAGE_DETECTION_CALIBRATION
+#define VOLTAGE_DETECTION_CALIBRATION           1.0f
+#endif
+#define VOLTAGE_DETECTION_DIVIDER               (((VOLTAGE_DETECTION_R2 + VOLTAGE_DETECTION_R1) / VOLTAGE_DETECTION_R1) * VOLTAGE_DETECTION_CALIBRATION)
+
+#define HAVE_INTERRUPTS                         ((HAVE_CURRENT_LIMIT && PIN_CURRENT_LIMIT_INDICATOR) || HAVE_DEBUG_RPM_SIGNAL_OUT)
 
 
 #define MAP(value, FROM_MIN, FROM_MAX, TO_MIN, TO_MAX) \
@@ -220,7 +308,8 @@ enum class MotorStateEnum : uint8_t {
     STARTUP,
     STALLED,
     ERROR,
-    BREAKING
+    BREAKING,
+    CURRENT_LIMIT
 };
 
 enum class PidConfigEnum : uint8_t {
@@ -264,9 +353,9 @@ public:
 
     ControlModeEnum control_mode;
     MotorStateEnum motor_state;
+    uint32_t motor_start_time;
     uint8_t brake_enaged: 1;
     uint8_t brake_enabled: 1;
-    // PidConfigEnum pid_config: 2;
     PidConfigEnum pid_config;
     uint8_t set_point_input;
     uint8_t led_brightness;
@@ -277,6 +366,7 @@ public:
     uint8_t current_limit;
     uint16_t max_stall_time;
     uint8_t max_pwm;
+    uint8_t rpm_sense_average;
 };
 
 class UIData_t {
@@ -304,6 +394,7 @@ void motor_stop(MotorStateEnum state = MotorStateEnum::OFF);
 void motor_start();
 void update_duty_cycle();
 void display_message(char *message, uint16_t time, uint8_t size = 2);
+void menu_display_value();
 #if HAVE_CURRENT_LIMIT
 void set_current_limit();
 #endif

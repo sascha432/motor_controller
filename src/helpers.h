@@ -174,6 +174,7 @@ unique_ptr<uint8_t> get_mcu_type(char *&mcu, uint8_t *&sig, uint8_t *&fuses);
 
 int Serial_printf(const char *format, ...);
 int Serial_printf_P(PGM_P format, ...);
+int Serial_print_bin(uint32_t value, uint8_t bits);
 bool Serial_readLine(String &input, bool allowEmpty);
 int Serial_print_float(double value, uint8_t max_precision = FLT_DIG, uint8_t max_decimals = 8);
 int count_decimals(double value, uint8_t max_precision = FLT_DIG, uint8_t max_decimals = 8);

@@ -8,8 +8,8 @@
 #include "main.h"
 
 #ifndef RPM_SENSE_PULSES_PER_TURN
-// wheel with 80 slots
-#define RPM_SENSE_PULSES_PER_TURN               80
+// wheel with 120 slots
+#define RPM_SENSE_PULSES_PER_TURN               120
 #endif
 
 // convert rpm to pulse length (µs)
@@ -40,13 +40,6 @@ inline void timer1_trigger_on_rising() {
 inline bool timer1_trigger_is_rising() {
     return (TCCR1B & _BV(ICES1));
 }
-
-// calculate average over RPM_SENSE_AVERAGE_COUNT signals. 0 = disabled
-#if DEBUG
-#define RPM_SENSE_AVERAGE_COUNT                 rpm_sense_average_count
-#else
-#define RPM_SENSE_AVERAGE_COUNT                 4
-#endif
 
 #if DEBUG_RPM_SIGNAL
 void dump_capture_timer_values();

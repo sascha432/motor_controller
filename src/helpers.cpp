@@ -89,6 +89,14 @@ int Serial_printf_P(PGM_P format, ...) {
     return len;
 }
 
+int Serial_print_bin(uint32_t value, uint8_t bits) {
+    auto bit = bits;
+    while(bit--) {
+        Serial.print((value & (1 << bit)) ? '1' : '0');
+    }
+    return bits;
+}
+
 bool Serial_readLine(String &input, bool allowEmpty) {
     int ch;
     while (Serial.available()) {
