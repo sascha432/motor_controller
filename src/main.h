@@ -258,7 +258,7 @@
 
 #define POTI_TO_DUTY_CYCLE(value)               MAP(value, POTI_MIN, POTI_MAX, MIN_DUTY_CYCLE, MAX_DUTY_CYCLE)
 
-#define EEPROM_MAGIC                            0xf1c9a543
+#define EEPROM_MAGIC                            0xf1c9a544
 
 #if DEBUG_PID_CONTROLLER
 
@@ -325,7 +325,8 @@ enum class PidConfigEnum : uint8_t {
 typedef struct {
     uint32_t magic;
     ControlModeEnum control_mode;
-    uint8_t set_point_input;
+    uint8_t set_point_input_velocity;
+    uint8_t set_point_input_pwm;
     uint8_t led_brightness;
     uint8_t current_limit;
     uint8_t brake_enabled;
@@ -351,22 +352,39 @@ public:
         setLedBrightness();
     }
 
+    uint8_t getSetPoint() const;
+    uint16_t getSetPointRPM() const {
+        return POTI_TO_RPM(getSetPoint());
+    }
+    uint16_t getSetPointDutyCycle() const {
+        return POTI_TO_DUTY_CYCLE(getSetPoint());
+    }
+    void setSetPoint(uint8_t value);
+    void changeSetPoint(int8_t value);
+
+    inline bool isPID() const {
+        return control_mode == ControlModeEnum::PID;
+    }
+
     ControlModeEnum control_mode;
     MotorStateEnum motor_state;
     uint32_t motor_start_time;
     uint8_t brake_enaged: 1;
     uint8_t brake_enabled: 1;
     PidConfigEnum pid_config;
-    uint8_t set_point_input;
     uint8_t led_brightness;
-    uint8_t led_brightness_pwm;
-#if HAVE_LED_FADING
-    uint32_t led_fade_timer;
-#endif
     uint8_t current_limit;
     uint16_t max_stall_time;
     uint8_t max_pwm;
     uint8_t rpm_sense_average;
+
+private:
+#if HAVE_LED_FADING
+    uint32_t led_fade_timer;
+#endif
+    uint8_t led_brightness_pwm;
+    uint8_t set_point_input_velocity;
+    uint8_t set_point_input_pwm;
 };
 
 class UIData_t {

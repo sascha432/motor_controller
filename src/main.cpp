@@ -52,11 +52,12 @@ void read_eeprom() {
     if (eeprom_data.magic == EEPROM_MAGIC) {
         data.copyFrom(eeprom_data);
         pid.setPidValues(eeprom_data.Kp, eeprom_data.Ki, eeprom_data.Kd);
-        // surprisingly this was not increasing code size cause of the extra call, but reduced it by 26 byte. gcc -O3
-        // pid.Kp = eeprom_data.Kp;
-        // pid.Ki = eeprom_data.Ki;
-        // pid.Kd = eeprom_data.Kd;
     }
+    // only called once in setup
+    // else {
+    //     data = Data_t();
+    //     pid.resetPidValues();
+    // }
     EEPROM.end();
 }
 
@@ -204,6 +205,10 @@ void refresh_display() {
         if (data.control_mode == ControlModeEnum::PID) {
             if (data.motor_state == MotorStateEnum::ON) {
                 if (data.pid_config == PidConfigEnum::OFF) {
+                    char buf[8];
+                    int len = sprintf_P(buf, PSTR("%u"), data.getSetPointRPM());
+                    display.setCursor(SCREEN_WIDTH - (FONT_WIDTH * len), 0);
+                    display.print(buf);
                     display.setTextSize(2);
                     display.setCursor(0, 5);
                 }
@@ -241,7 +246,7 @@ void refresh_display() {
             else {
                 display.setTextSize(1);
                 display.println(F("Set point velocity"));
-                display.print(POTI_TO_RPM(data.set_point_input));
+                display.print(data.getSetPointRPM());
                 display.println(_F(_rpm));
             }
         }
@@ -255,7 +260,7 @@ void refresh_display() {
             else {
                 display.setTextSize(1);
                 display.println(F("Set point PWM"));
-                display.print(POTI_TO_DUTY_CYCLE(data.set_point_input) * 100.0 / MAX_DUTY_CYCLE, 1);
+                display.print(data.getSetPointDutyCycle() * 100 / (float)MAX_DUTY_CYCLE, 1);
                 display.println('%');
             }
         }
@@ -316,7 +321,7 @@ void display_message(char *message, uint16_t time, uint8_t size) {
 
 // set RPM pulse length from poti value
 void calc_rpm_pulse_length() {
-    auto rpm = POTI_TO_RPM(data.set_point_input);
+    auto rpm = data.getSetPointRPM();
     pid.set_point_rpm_pulse_length = RPM_SENSE_RPM_TO_US(rpm);
 #if RPM_SENSE_AVERAGING_FACTOR
     data.rpm_sense_average = (rpm * (rpm / RPM_SENSE_AVERAGING_FACTOR)) / 30000;
@@ -325,15 +330,13 @@ void calc_rpm_pulse_length() {
 #endif
 }
 
-// set duty cycle from poti value
-void set_duty_cycle() {
-    pid.duty_cycle = POTI_TO_DUTY_CYCLE(data.set_point_input);
-}
-
 // set duty cycle or RPM pulse length
 void update_motor_speed() {
     if (data.control_mode == ControlModeEnum::DUTY_CYCLE) {
-        set_duty_cycle();
+#if RPM_SENSE_AVERAGING_FACTOR
+        data.rpm_sense_average = 0;
+#endif
+        pid.duty_cycle = data.getSetPointDutyCycle();
         if (data.motor_state == MotorStateEnum::ON) {
             set_motor_speed(pid.duty_cycle);
         }
@@ -420,7 +423,7 @@ void menu_display_value() {
                     buf.print('%');
                 }
                 else {
-                    snprintf_P(message, sizeof(message), PSTR("%u rpm"), POTI_TO_RPM(data.set_point_input));
+                    snprintf_P(message, sizeof(message), PSTR("%u rpm"), data.getSetPointRPM());
                 }
                 break;
             case MenuEnum::MENU_MODE:
@@ -458,22 +461,7 @@ void menu_display_value() {
 bool update_motor_settings(int16_t value) {
     if (value) {
         if (data.pid_config == PidConfigEnum::OFF) {
-            if (value < 0) {
-                if (data.set_point_input + value > POTI_MIN) {
-                    data.set_point_input += value;
-                }
-                else {
-                    data.set_point_input = POTI_MIN;
-                }
-            }
-            else {
-                if (data.set_point_input + value < POTI_MAX) {
-                    data.set_point_input += value;
-                }
-                else {
-                    data.set_point_input = POTI_MAX;
-                }
-            }
+            data.changeSetPoint(value);
             update_motor_speed();
             return true;
         }
@@ -917,24 +905,12 @@ void loop() {
 #endif
             case '+':
             case '*':
-                data.set_point_input += POTI_RANGE / (ch == '*' ? 10 : 128);
-                if (data.set_point_input > POTI_MAX)  {
-                    data.set_point_input = POTI_MAX;
-                }
-                else if (data.set_point_input < POTI_MIN) {
-                    data.set_point_input = POTI_MIN;
-                }
+                data.changeSetPoint(POTI_RANGE / (ch == '*' ? 10 : 128));
                 update_motor_speed();
                 break;
             case '-':
             case '/': {
-                uint16_t decrement = POTI_RANGE / (ch == '/' ? 10 : 128);
-                if (data.set_point_input >= decrement)  {
-                    data.set_point_input -= decrement;
-                }
-                else if (data.set_point_input < POTI_MIN) {
-                    data.set_point_input = POTI_MIN;
-                }
+                data.changeSetPoint(POTI_RANGE / (ch == '/' ? 10 : 128));
                 update_motor_speed();
             }
             break;
