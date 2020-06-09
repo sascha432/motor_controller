@@ -37,14 +37,14 @@ void PidController::setPidValues(float _Kp, float _Ki, float _Kd)
 {
     Kp = _Kp;
     Ki = _Ki;
-    Kp = _Kp;
+    Kd = _Kd;
 }
 
 void PidController::getPidValues(float &_Kp, float &_Ki, float &_Kd) const
 {
     _Kp = Kp;
     _Ki = Ki;
-    _Kp = Kp;
+    _Kd = Kd;
 }
 
 void PidController::updatePidValue(uint8_t num, int8_t steps)
