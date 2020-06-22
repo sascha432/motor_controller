@@ -5,10 +5,12 @@
 #pragma once
 
 #include <Arduino.h>
+#include <util/atomic.h>
+#include "progmem_strings.h"
 
 #define VERSION_MAJOR                           1
 #define VERSION_MINOR                           0
-#define VERSION_PATCH                           2
+#define VERSION_PATCH                           3
 
 #if DEBUG
 #ifndef DEBUG_PID_CONTROLLER
@@ -43,15 +45,25 @@
 #endif
 
 #ifndef HAVE_CURRENT_LIMIT
-// TODO not working yet
 // +328 byte code size
-#define HAVE_CURRENT_LIMIT                      0
+#define HAVE_CURRENT_LIMIT                      1
 #endif
 
 // pins
 
 // always use set_motor_speed() to change PIN_MOTOR_PWM or PIN_BRAKE to avoid damage of the motor controller
 #define PIN_MOTOR_PWM                           11          // D11/PB3/15
+#if PIN_MOTOR_PWM == 11
+// TIMER2A
+// set duty cycle directly. only works if analogWrite() was called before with a value between 1 and 254.
+// use analogWrite() or digitalWrite() to set to 0/LOW or 255/HIGH
+// the value is not limited to data.max_pwm
+#define MOTOR_SET_DUTY_CYCLE(pwm)               OCR2A = pwm;
+#else
+#warning add timer for PIN_MOTOR_PWM
+#define MOTOR_SET_DUTY_CYCLE(pwm)               analogWrite(PIN_MOTOR_PWM, pwm);
+#endif
+
 #define PIN_BRAKE                               7           // D7/PD7/11
 
 #define PIN_LED_DIMMER                          5           // D5/PD5/9
@@ -68,12 +80,23 @@
 #define PIN_ROTARY_ENC_CLK                      2           // D2/PD2/32
 #define PIN_ROTARY_ENC_DT                       3           // D3/PD3/1
 
+#define PIN_CURRENT_LIMIT_LED                   15/*A1*/    // A1/PC1/24
+#if PIN_CURRENT_LIMIT_LED == 15
+#define PIN_CURRENT_LIMIT_LED_PORT              PORTC
+#define PIN_CURRENT_LIMIT_LED_PIN               PINC
+#define PIN_CURRENT_LIMIT_LED_PIN_BV            _BV(PINC1)
+#else
+#error PORT not defined
+#endif
+
+
+
 #define PIN_VOLTAGE                             A0          // A0/PC0/23
 
 // pin interrupt setup
 #if HAVE_CURRENT_LIMIT
 #if PIN_CURRENT_LIMIT_INDICATOR == 12
-#define PIN_CURRENT_LIMIT_INDICATOR_MASK        (1 << PINB4)
+#define PIN_CURRENT_LIMIT_INDICATOR_MASK        _BV(PINB4)
 #else
 #error add mask for PIN_CURRENT_LIMIT_INDICATOR, can only be PINB
 #endif
@@ -95,34 +118,43 @@
 #define MCU_VOLTAGE                             5.0
 
 // current limit
-#define CURRENT_LIMIT_MIN                       6           // ~1.0A
-// max. ~230
-#define CURRENT_LIMIT_MAX                       220         // ~38.4A
+#define CURRENT_LIMIT_MIN                       3           // ~0.63A
+#define CURRENT_LIMIT_MAX                       224         // ~35A
 #define CURRENT_LIMIT_DISABLED                  255
 // DAC @ 980Hz, 1020µs / 3.99µs steps
-// voltage dividvers
-#define CURRENT_LIMIT_DAC_R1                    100.0
-#define CURRENT_LIMIT_DAC_R2                    1000.0
-#define CURRENT_LIMIT_DAC_R3                    27.0
-#define CURRENT_LIMIT_SHUNT                     3           // 0.003R / 3 milliohm
+// voltage dividers
+
+#define CURRENT_LIMIT_DAC_R1a                   100.0
+#define CURRENT_LIMIT_DAC_R1b                   1000.0
+#define CURRENT_LIMIT_DAC_R1                    (CURRENT_LIMIT_DAC_R1a + CURRENT_LIMIT_DAC_R1b)
+#define CURRENT_LIMIT_DAC_R2                    75.0
+#define CURRENT_LIMIT_SHUNT                     8           // 0.008R / 3 milliohm
+
+// VREF, maximum voltage for the DAC
+#define CURRENT_LIMIT_DAC_MAX_VOLTAGE           ((MCU_VOLTAGE * CURRENT_LIMIT_DAC_R2) / (CURRENT_LIMIT_DAC_R1 + CURRENT_LIMIT_DAC_R2))
 
 // mV to current
-#define CURRENT_LIMIT_SHUNT_mV_TO_A(value)      (value / CURRENT_LIMIT_SHUNT)
-// max. voltage of the DAC ~4.5563V
-#define CURRENT_LIMIT_DAC_VOLTAGE               (MCU_VOLTAGE * (1 - (1 / ((CURRENT_LIMIT_DAC_R1 + CURRENT_LIMIT_DAC_R2 + CURRENT_LIMIT_DAC_R3) / CURRENT_LIMIT_DAC_R1))))
+//#define CURRENT_LIMIT_SHUNT_mV_TO_A(value)      (value / CURRENT_LIMIT_SHUNT)
 
 // voltage per PWM step in mV, might need some adjustments due to tolerances
-//#define CURRENT_LIMIT_DAC_TO_mV(value)          ((value * (MCU_VOLTAGE / 256.0)) / ((CURRENT_LIMIT_DAC_R2 + CURRENT_LIMIT_DAC_R3) / CURRENT_LIMIT_DAC_R3) * 1020.0)
+//#define CURRENT_LIMIT_DAC_TO_mV(value)          (value * (CURRENT_LIMIT_DAC_MAX_VOLTAGE / 255.0)) / ((CURRENT_LIMIT_DAC_R2 + CURRENT_LIMIT_DAC_R3) / CURRENT_LIMIT_DAC_R3)
 
-// optimized version
-#define CURRENT_LIMIT_DAC_TO_mV(value)          (255 * CURRENT_LIMIT_DAC_R3 * MCU_VOLTAGE * value) / (64 * CURRENT_LIMIT_DAC_R3 + 64 * CURRENT_LIMIT_DAC_R2)
+ //#define CURRENT_LIMIT_DAC_TO_CURRENT(value)    CURRENT_LIMIT_SHUNT_mV_TO_A(CURRENT_LIMIT_DAC_TO_mV(value))
 
-// vref = current limit at the LM393, max ~120mV/40A with a 3 milliohm shunt
-// #define CURRENT_LIMIT_DAC_TO_CURRENT(value)    CURRENT_LIMIT_SHUNT_mV_TO_A(CURRENT_LIMIT_DAC_TO_mV(value))
+#define CURRENT_LIMIT_DAC_TO_CURRENT(value)     ((value * 0.156446f) + (value < 7 ? 0.35 : (value < 13 ? 0.2 : 0)))
 
-// optimized version
-#define CURRENT_LIMIT_DAC_TO_CURRENT(value)     (255 * CURRENT_LIMIT_DAC_R3 * MCU_VOLTAGE * value) / ((64 * CURRENT_LIMIT_DAC_R3 + 64 * CURRENT_LIMIT_DAC_R2) * CURRENT_LIMIT_SHUNT)
 
+// after the current limit has been trigger, ramp up the pwm signal slowly. time in microseconds
+#define CURRENT_LIMIT_RAMP_UP_PERIOD            1500
+
+// min. duty cycle after the current limit has been tripped
+#define CURRENT_LIMIT_MIN_DUTY_CYCLE            20
+#if CURRENT_LIMIT_MIN_DUTY_CYCLE == 0 || CURRENT_LIMIT_MIN_DUTY_CYCLE == 255
+#error Must not be 0 or 255
+#endif
+
+// delay after starting the motor in milliseconds
+#define CURRENT_LIMIT_DELAY                     500
 
 // LED PWM 980Hz for MT3608
 #define LED_MIN_PWM                             25
@@ -222,8 +254,8 @@
 #define TIMER1_TICKS_PER_US                     (F_CPU / TIMER1_PRESCALER / 1000000.0)
 
 // motor PWM
-#define TIMER2_PRESCALER                        _BV(CS20); // 31250Hz
-// #define TIMER2_PRESCALER                        _BV(CS21); // 3906Hz
+#define TIMER2_PRESCALER                        1
+#define TIMER2_PRESCALER_BV                      _BV(CS20); // 31250Hz
 #define PWM_CYCLE_TICKS                         ((F_CPU / TIMER1_PRESCALER) / PWM_FREQUENCY)
 #define PWM_DUTY_CYCLE_TO_TICKS(duty_cycle)     (duty_cycle * (uint32_t)PWM_CYCLE_TICKS / MAX_DUTY_CYCLE)
 
@@ -286,30 +318,15 @@ enum class ControlModeEnum : uint8_t {
     PID,
 };
 
-enum class MenuEnum : uint8_t {
-    MENU_SPEED = 0,
-    MENU_MODE,
-    MENU_LED,
-#if HAVE_CURRENT_LIMIT
-    MENU_CURRENT,
-#endif
-    MENU_PWM,
-    MENU_STALL,
-    MENU_BRAKE,
-    MENU_INFO,
-    MENU_EXIT,
-    MENU_COUNT,
-};
-
 enum class MotorStateEnum : uint8_t {
     OFF = 0,
     ON,
-    // any "off" state other OFF required to reset the motor before it can be turned on again
+    // any "off" state other OFF requires to reset the motor before it can be turned on again
     STARTUP,
     STALLED,
     ERROR,
-    BREAKING,
-    CURRENT_LIMIT
+    BREAKING
+    // CURRENT_LIMIT
 };
 
 enum class PidConfigEnum : uint8_t {
@@ -343,11 +360,16 @@ public:
 
     void copyTo(EEPROMData_t &eeprom_data);
     void copyFrom(const EEPROMData_t &eeprom_data);
-    void setControlMode(ControlModeEnum mode);
     void setLedBrightness();
     inline void setLedBrightnessNoDelay() {
 #if HAVE_LED_FADING
         led_fade_timer = 0;
+        led_brightness_pwm = led_brightness;
+        if (led_brightness_pwm > 0) {
+            led_brightness_pwm--;
+        } else {
+            led_brightness_pwm++;
+        }
 #endif
         setLedBrightness();
     }
@@ -362,20 +384,8 @@ public:
     void setSetPoint(uint8_t value);
     void changeSetPoint(int8_t value);
 
-    inline bool isPID() const {
-        return control_mode == ControlModeEnum::PID;
-    }
-
-    ControlModeEnum control_mode;
-    MotorStateEnum motor_state;
-    uint32_t motor_start_time;
-    uint8_t brake_enaged: 1;
-    uint8_t brake_enabled: 1;
     PidConfigEnum pid_config;
     uint8_t led_brightness;
-    uint8_t current_limit;
-    uint16_t max_stall_time;
-    uint8_t max_pwm;
     uint8_t rpm_sense_average;
 
 private:
@@ -398,22 +408,22 @@ public:
     void updateDutyCyle();
 
     uint32_t knob_read_timer;
-    uint32_t refresh_timer;
+    volatile uint32_t refresh_timer;
     uint16_t refresh_counter;
     uint8_t display_duty_cycle_integral;
     uint16_t display_pulse_length_integral;
+    volatile uint32_t display_current_limit_timer;
 };
 
 extern Data_t data;
 extern UIData_t ui_data;
 
-void set_motor_speed(int speed);
-void motor_stop(MotorStateEnum state = MotorStateEnum::OFF);
-void motor_start();
+#include "menu.h"
+
+extern Menu menu;
+
 void update_duty_cycle();
 void display_message(char *message, uint16_t time, uint8_t size = 2);
 void menu_display_value();
-#if HAVE_CURRENT_LIMIT
-void set_current_limit();
-#endif
 void print_pid_cfg(char *buffer, size_t len);
+void refresh_display();

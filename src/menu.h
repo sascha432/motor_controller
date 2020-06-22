@@ -6,11 +6,25 @@
 
 #include <Arduino.h>
 #include <Adafruit_SSD1306.h>
-
-#define FPSTR(str)                              reinterpret_cast<const __FlashStringHelper *>(str)
+#include "progmem_strings.h"
 
 #define FONT_WIDTH                              6
 #define FONT_HEIGHT                             8
+
+enum class MenuEnum : uint8_t {
+    MENU_SPEED = 0,
+    MENU_MODE,
+    MENU_LED,
+#if HAVE_CURRENT_LIMIT
+    MENU_CURRENT,
+#endif
+    MENU_PWM,
+    MENU_STALL,
+    MENU_BRAKE,
+    MENU_INFO,
+    MENU_EXIT,
+    MENU_COUNT,
+};
 
 class Menu {
 public:

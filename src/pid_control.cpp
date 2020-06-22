@@ -5,19 +5,8 @@
 #include "main.h"
 #include "pid_control.h"
 #include "rpm_sensing.h"
+#include "motor.h"
 #include "helpers.h"
-
-#if DEBUG_PID_CONTROLLER
-
-uint16_t pid_test_set_points[PID_TEST_SET_POINTS] = { 1500, 750, 3500, 500, 600, 700, 2000, 2100, 1500, 1000 };  // each RPM is tested for (pid_test_duration/PID_TEST_SET_POINTS) ms
-uint32_t pid_test_timer_start = 0;
-uint32_t pid_test_timer_end = 0;
-uint32_t pid_test_duration = 0;
-uint16_t pid_test_micros_offset = 0;
-uint16_t pid_test_counter;
-float pid_tune_increment = 0;
-
-#endif
 
 PidController pid;
 
@@ -90,6 +79,7 @@ void PidController::reset()
     last_update.start();
 }
 
+// called inside ISR
 void PidController::update()
 {
     auto _micros = micros();
@@ -99,10 +89,10 @@ void PidController::update()
 #endif
     last_update.start(_micros);
 
-    auto measured_pulse_length = capture_timer_get_micros();
+    auto measured_pulse_length = rpm_sense.getTimerIntegralMicros();
     ui_data.display_pulse_length_integral = (ui_data.display_pulse_length_integral * DISPLAY_RPM_MULTIPLIER + measured_pulse_length) / (DISPLAY_RPM_MULTIPLIER + 1);
 
-    if (data.motor_state == MotorStateEnum::ON) {
+    if (motor.isOn()) {
         int32_t error = measured_pulse_length - set_point_rpm_pulse_length; // values are inverted
 #if DEBUG
         if (abs(error) > 1000000) {
@@ -125,26 +115,6 @@ void PidController::update()
 
         duty_cycle = max(MIN_DUTY_CYCLE, min(output, MAX_DUTY_CYCLE));
         ui_data.display_duty_cycle_integral = (ui_data.display_duty_cycle_integral * DISPLAY_DUTY_CYCLE_MULTIPLIER + duty_cycle) / (DISPLAY_DUTY_CYCLE_MULTIPLIER + 1);
-        set_motor_speed(duty_cycle);
+        motor.setSpeed(duty_cycle);
     }
-
-#if DEBUG_PID_CONTROLLER
-    if (pid_enable_serial_output && pid_test_timer_start) {
-        if (pid_test_counter++ == 0) {
-            Serial.println(F("---PID_TEST_START---"));
-            Serial_printf_P(PSTR("PARAM=%x,Kp=%f,Ki=%f,Kd=%f\n"), set_point_rpm_pulse_length, Kp, Ki, Kd);
-        }
-        auto millis_diff = millis() - pid_test_timer_start;
-        Serial.print(delta_t_short);
-        Serial.write(',');
-        Serial.print(measured_pulse_length);
-        auto sp = RPM_SENSE_RPM_TO_US(pid_test_set_points[(millis_diff / (pid_test_duration / PID_TEST_SET_POINTS)) % PID_TEST_SET_POINTS]);
-        if (sp != set_point_rpm_pulse_length) {
-            set_point_rpm_pulse_length = sp;
-            Serial.write(',');
-            Serial.print(sp);
-        }
-        Serial.println();
-    }
-#endif
 }

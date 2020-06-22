@@ -8,62 +8,59 @@
 #include "timer.h"
 #include "helpers.h"
 
-capture_timer_callback_t capture_timer_callback;
-volatile bool capture_timer_callback_locked = false;
-// volatile uint8_t capture_trigger;
+RpmSense rpm_sense;
 
-volatile int16_t capture_timer_overflow;
-volatile uint32_t capture_last_signal;
-volatile uint32_t capture_timer_integral;
-volatile uint32_t capture_last_signal_ticks;
-volatile uint32_t capture_timer_signal_counter;
-volatile uint32_t capture_timer_block_ticks;
+// overflow interrupt
+ISR(TIMER1_OVF_vect)
+{
+    rpm_sense._overflowISR();
+
+}
+
+// capture interrupt
+ISR(TIMER1_CAPT_vect)
+{
+    rpm_sense._captureISR();
+}
+
+RpmSense::RpmSense() : capture_timer_callback_locked(false)
+{
+    reset();
+}
 
 // reset RPM sensing
-void reset_capture_timer() {
-    cli();
+void RpmSense::reset()
+{
     capture_last_signal = millis();
     capture_timer_overflow = 0;
     capture_timer_integral = 0;
     capture_timer_signal_counter = 0;
     capture_last_signal_ticks = 0;
     capture_timer_block_ticks = 0;
-#if DEBUG
-    // capture_timer_misfire = 0;
-#endif
-
-    timer1_trigger_on_falling();
-    // capture_trigger = 0;
-
-    sei();
+    //TCCR1B &= ~_BV(ICES1);
 }
 
 // initialize capture timer for RPM sensing
-void init_capture_timer() {
+void RpmSense::begin()
+{
+    pinMode(PIN_RPM_SIGNAL, INPUT);
 
-	TCCR1A = 0;
-    TCCR1B = TIMER1_PRESCALER_BV | _BV(ICES1);
-	TCCR1C = 0;
-
-    reset_capture_timer();
-
+    TCCR1B |= _BV(ICES1);
+    // clear flags
+	TIFR1 |= _BV(ICF1) | _BV(TOV1);
     // enable input capture and timer1 overflow
-	TIFR1 = _BV(ICF1) | _BV(TOV1);
-	TIMSK1 = _BV(ICIE1) | _BV(TOIE1);
+	TIMSK1 |= _BV(ICIE1) | _BV(TOIE1);
+
+    reset();
 }
 
-// overflow interrupt
-ISR(TIMER1_OVF_vect) {
-    capture_timer_overflow++;
-}
-
-void capture_timer_set_callback(capture_timer_callback_t callback) {
+void RpmSense::setCallback(capture_timer_callback_t callback)
+{
     capture_timer_callback = callback;
 }
 
-// capture interrupt
-ISR(TIMER1_CAPT_vect) {
-
+void RpmSense::_captureISR()
+{
     auto counter = ICR1;
 
     // if (!capture_trigger) {
@@ -104,20 +101,23 @@ ISR(TIMER1_CAPT_vect) {
         sei();
 
         capture_timer_callback();
-        cli();
-        capture_timer_callback_locked = false;
-        sei();
+        ATOMIC_BLOCK(ATOMIC_FORCEON) {
+            capture_timer_callback_locked = false;
+        }
     }
 }
 
-uint32_t capture_timer_last_signal_millis() {
+uint32_t RpmSense::getLastSignalMillis()
+{
     return capture_last_signal;
 }
 
-uint32_t capture_timer_get_integral() {
+uint32_t RpmSense::getTimerIntegral()
+{
     return capture_timer_integral;
 }
 
-uint32_t capture_timer_get_micros() {
+uint32_t RpmSense::getTimerIntegralMicros()
+{
     return capture_timer_integral / TIMER1_TICKS_PER_US;
 }

@@ -26,7 +26,7 @@ public:
     float Kp, Ki, Kd;
     float integral;
     long previous_error;
-    uint8_t duty_cycle;
+    volatile uint8_t duty_cycle;
     uint16_t set_point_rpm_pulse_length;
     MicrosTimer last_update;
     // float voltage_multiplier;

@@ -29,34 +29,39 @@
 // used to calculate RPM_SENSE_IGNORE_SIGNAL_TIME, should be 3x the maximum RPM to detect
 #define RPM_SENSE_RPM_MAX                       (RPM_MAX * 3)
 
-inline void timer1_trigger_on_falling() {
-    TCCR1B &= ~_BV(ICES1);
-}
+class RpmSense {
+public:
+    typedef void (*capture_timer_callback_t)();
 
-inline void timer1_trigger_on_rising() {
-    TCCR1B |= _BV(ICES1);
-}
+public:
+    RpmSense();
 
-inline bool timer1_trigger_is_rising() {
-    return (TCCR1B & _BV(ICES1));
-}
+    void begin();
+    void reset();
 
-#if DEBUG_RPM_SIGNAL
-void dump_capture_timer_values();
-#endif
+    void setCallback(capture_timer_callback_t callback);
 
-#if DEBUG
-// extern volatile uint16_t capture_timer_misfire;
-extern uint8_t rpm_sense_average_count;
-// void rpm_sense_reset_measurement();
-// void rpm_sense_dump_measurement();
-#endif
+    inline void _overflowISR()
+    {
+        capture_timer_overflow++;
+    }
+    void _captureISR();
 
-typedef void (*capture_timer_callback_t)();
+    uint32_t getLastSignalMillis();
+    uint32_t getTimerIntegral();
+    uint32_t getTimerIntegralMicros();
 
-void reset_capture_timer();
-void init_capture_timer();
-void capture_timer_set_callback(capture_timer_callback_t callback);
-uint32_t capture_timer_last_signal_millis();
-uint32_t capture_timer_get_integral();
-uint32_t capture_timer_get_micros();
+private:
+    capture_timer_callback_t capture_timer_callback;
+    volatile bool capture_timer_callback_locked;
+    // volatile uint8_t capture_trigger;
+
+    volatile int16_t capture_timer_overflow;
+    volatile uint32_t capture_last_signal;
+    volatile uint32_t capture_timer_integral;
+    volatile uint32_t capture_last_signal_ticks;
+    volatile uint32_t capture_timer_signal_counter;
+    volatile uint32_t capture_timer_block_ticks;
+};
+
+extern RpmSense rpm_sense;

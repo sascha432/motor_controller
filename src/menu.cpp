@@ -3,17 +3,19 @@
  */
 
 #include "main.h"
-#include "menu.h"
 
-Menu::Menu(uint8_t count, Adafruit_SSD1306 &display) : _position(0), _size(count), _state(0), _display(display) {
+Menu::Menu(uint8_t count, Adafruit_SSD1306 &display) : _position(0), _size(count), _state(0), _display(display)
+{
     _items = new PGM_P[count];
 }
 
-Menu::~Menu() {
+Menu::~Menu()
+{
     delete _items;
 }
 
-void Menu::display() {
+void Menu::display()
+{
     _display.clearDisplay();
     _display.setTextSize(1);
     _displayItem(0, _position + _size - 1);
@@ -30,47 +32,57 @@ void Menu::display() {
     _display.display();
 }
 
-void Menu::displayTitle() {
+void Menu::displayTitle()
+{
     _display.setTextSize(1);
     _displayItem(0, _position);
 }
 
-void Menu::add(uint8_t index, PGM_P name) {
+void Menu::add(uint8_t index, PGM_P name)
+{
     _items[index] = name;
 }
 
-bool Menu::isOpen() const {
+bool Menu::isOpen() const
+{
     return _state != 0;
 }
 
-bool Menu::isActive() const {
+bool Menu::isActive() const
+{
     return _state == 2;
 }
 
-bool Menu::isMainMenuActive() const {
+bool Menu::isMainMenuActive() const
+{
     return _state == 1;
 }
 
-void Menu::close() {
+void Menu::close()
+{
     _state = 0;
 }
 
-void Menu::open() {
+void Menu::open()
+{
     _state = 1;
     display();
 }
 
-void Menu::up() {
+void Menu::up()
+{
     _position = (_position - 1) % _size;
     display();
 }
 
-void Menu::down() {
+void Menu::down()
+{
     _position = (_position + 1) % _size;
     display();
 }
 
-bool Menu::setPosition(uint8_t position) {
+bool Menu::setPosition(uint8_t position)
+{
     position = position % _size;
     if (_position != position) {
         _position = position;
@@ -80,16 +92,19 @@ bool Menu::setPosition(uint8_t position) {
     return false;
 }
 
-void Menu::enter() {
+void Menu::enter()
+{
     _state = 2;
 }
 
-void Menu::exit() {
+void Menu::exit()
+{
     _state = 1;
     display();
 }
 
-void Menu::_displayItem(uint8_t y, uint8_t index) {
+void Menu::_displayItem(uint8_t y, uint8_t index)
+{
     auto item = _items[index % _size];
     _display.setCursor((SCREEN_WIDTH / 2) - (strlen_P(item) * (FONT_WIDTH / 2)), y);
     _display.print(FPSTR(item));

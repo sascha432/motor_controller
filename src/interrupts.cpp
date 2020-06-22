@@ -5,10 +5,16 @@
 #include "main.h"
 #include "interrupts.h"
 #include "helpers.h"
+#include "timer.h"
+#include "pid_control.h"
+#include "motor.h"
+#include "current_limit.h"
 
 #if DEBUG_TRIGGERED_INTERRUPTS
 volatile InterruptTriggeredFlags_t interrupt_trigger_flags = { false, false };
 #endif
+
+volatile uint8_t pinb_state_last;
 
 void pciSetup(byte pin)
 {
@@ -17,59 +23,46 @@ void pciSetup(byte pin)
     PCICR |= bit(digitalPinToPCICRbit(pin));
 }
 
-#if HAVE_CURRENT_LIMIT
-volatile uint32_t current_limit_tripped = 0;
-#endif
-
 #if HAVE_INTERRUPTS
-
-static uint8_t pinb_state_last;
 
 void setup_interrupts()
 {
-    cli();
     pinb_state_last = PINB;
 #if HAVE_CURRENT_LIMIT
     pciSetup(PIN_CURRENT_LIMIT_INDICATOR);
-#endif
-#if HAVE_DEBUG_RPM_SIGNAL_OUT
+#elif HAVE_DEBUG_RPM_SIGNAL_OUT
     pciSetup(PIN_RPM_SIGNAL);
 #endif
-    sei();
 }
 
 
 ISR(PCINT0_vect) {
 
+#define PINB_STATE_CHANGED(mask) (pinb_changes & mask)
+
     // track changes for PINB
-    uint8_t pin_state = PINB;
-    uint8_t pinb_changes = pin_state ^ pinb_state_last;
-    pinb_state_last = pin_state;
+    uint8_t pinb_changes = PINB ^ pinb_state_last;
+    pinb_state_last = PINB;
 
 #if HAVE_CURRENT_LIMIT
 
-    if (pinb_changes & PIN_CURRENT_LIMIT_INDICATOR_MASK) { // state changed
-        SET_INTERRUPT_TRIGGER(current_limit_flag, true);
-
-        // if (millis() > data.motor_start_time + 2000) {
-        //     // TODO implement reducing/limiting duty cycle
-        //     // turn motor off
-        //     set_motor_speed(0);
-        //     data.motor_state = MotorStateEnum::CURRENT_LIMIT;
-        // }
-
-        if ((pin_state && PIN_CURRENT_LIMIT_INDICATOR_MASK) && current_limit_tripped == 0) { // rising edge, store time if not set
-            current_limit_tripped = millis();
+    if (PINB_STATE_CHANGED(PIN_CURRENT_LIMIT_INDICATOR_MASK)) {
+        bool state = (PINB && PIN_CURRENT_LIMIT_INDICATOR_MASK);
+#if DEBUG_TRIGGERED_INTERRUPTS
+        if (state) {
+            SET_INTERRUPT_TRIGGER(current_limit_flag, state);
         }
+#endif
+        current_limit.pinISR(state);
     }
 
 #endif
 
 #if HAVE_DEBUG_RPM_SIGNAL_OUT
 
-    if (pinb_changes & PIN_RPM_SIGNAL_MASK) { // state changed
+    if (PINB_STATE_CHANGED(PIN_RPM_SIGNAL_MASK)) { // state changed
         SET_INTERRUPT_TRIGGER(rpm_sense_flag, true);
-        if (pin_state & PIN_RPM_SIGNAL_DEBUG_OUT_MASK) { // toggle PIN_RPM_SIGNAL_DEBUG_OUT
+        if (PINB & PIN_RPM_SIGNAL_DEBUG_OUT_MASK) { // toggle PIN_RPM_SIGNAL_DEBUG_OUT
             PINB &= PIN_RPM_SIGNAL_DEBUG_OUT_MASK;
         } else {
             PINB |= PIN_RPM_SIGNAL_DEBUG_OUT_MASK;

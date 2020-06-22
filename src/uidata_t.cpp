@@ -31,5 +31,5 @@ bool UIData_t::readKnobValue()
 
 void UIData_t::updateDutyCyle()
 {
-    display_pulse_length_integral = (display_pulse_length_integral * DISPLAY_RPM_MULTIPLIER + capture_timer_get_micros()) / (DISPLAY_RPM_MULTIPLIER + 1);
+    display_pulse_length_integral = (display_pulse_length_integral * DISPLAY_RPM_MULTIPLIER + rpm_sense.getTimerIntegralMicros()) / (DISPLAY_RPM_MULTIPLIER + 1);
 }

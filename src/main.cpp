@@ -18,23 +18,11 @@
 #include "rpm_sensing.h"
 #include "interrupts.h"
 #include "pid_control.h"
+#include "motor.h"
+#include "current_limit.h"
 #include "timer.h"
 #include "DebugBuffer.h"
 #include "helpers.h"
-#include "menu.h"
-
-#define _D_T(name, value)       static const char _text_##name[] PROGMEM = { value }
-#define _T(name)                _text_##name
-#define _F(name)                FPSTR(_T(name))
-
-_D_T(OFF, "OFF");
-_D_T(DISABLED, "DISABLED");
-_D_T(ENABLED, "ENABLED");
-_D_T(ERROR, "ERROR");
-_D_T(STALLED, "STALLED");
-_D_T(BREAKING, "BREAKING");
-_D_T(SAVED, "SAVED");
-_D_T(_rpm, " rpm");
 
 Data_t data;
 UIData_t ui_data;
@@ -73,7 +61,6 @@ void write_eeprom() {
     bool changed = memcmp(&eeprom_data, &eeprom_data_current, sizeof(eeprom_data)) != 0;
     if (changed) {
         EEPROM.put(0, eeprom_data);
-        Serial.println(F("saved"));
     }
     EEPROM.end();
 
@@ -88,63 +75,32 @@ void write_eeprom() {
 }
 
 
-void set_version(char *buffer, uint8_t size) {
+void set_version(char *buffer, uint8_t size)
+{
     snprintf_P(buffer, size, PSTR("Version %u.%u.%u"), VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
-}
-
-
-// set PWM duty cycle with enabling/disabling the brake and turning the motor signal led on/off
-void set_motor_speed(int speed) {
-    if (data.brake_enaged) {
-        debug_printf_P(PSTR("speed %u - BREAKING\n"), speed);
-        return;
-    }
-    if (data.motor_state != MotorStateEnum::ON && speed != 0) {
-        // motor state must be ON or speed cannot be set to non zero
-        debug_printf_P(PSTR("speed %u - OFF\n"), speed);
-        return;
-    }
-    if (speed != 0) {
-        digitalWrite(PIN_BRAKE, LOW);
-    }
-#if DEBUG_MOTOR_SPEED
-    Serial.print(F("speed="));
-    Serial.println(speed);
-#endif
-#if 0
-    if (speed != 0) {
-        if (digitalRead(PIN_BRAKE)) {
-            motor_stop(ERROR);
-            return;
-        }
-    }
-#endif
-    if (speed > data.max_pwm) {
-        speed = data.max_pwm;
-    }
-    analogWrite(PIN_MOTOR_PWM, speed);
-    if (speed == 0) {
-        digitalWrite(PIN_MOTOR_PWM, LOW);
-        if (data.brake_enabled) {
-            digitalWrite(PIN_BRAKE, HIGH);
-            data.brake_enaged = true;
-        }
-    }
 }
 
 
 // setup and clear display
 void setup_display() {
 
+    constexpr uint16_t displayBootTimeDelay = 750;
+
     // the display needs some time to power up...
-    // fade in the LED meanwhile
+    // fade in the LED meanwhile and blink the current limit indicator LED
 #if HAVE_LED_FADING
-    unsigned long end = millis() + 750;
-    while(millis() < end) {
+    unsigned long start = millis();
+    uint16_t time;
+    do {
+        time = millis() - start;
         data.setLedBrightness();
-    }
+        digitalWrite(PIN_CURRENT_LIMIT_LED, (time / (displayBootTimeDelay / 10)) % 2);
+    } while(time < displayBootTimeDelay);
 #else
-        delay(750);
+    for(uint8_t i = 0; i < 4; i++) {
+        digitalWrite(PIN_CURRENT_LIMIT_LED, i % 2);
+        delay(displayBootTimeDelay / 10);
+    }
 #endif
 
     if (display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDRESS)) {
@@ -155,14 +111,10 @@ void setup_display() {
         display.display();
         ui_data.refreshDisplay();
     }
-    else {
-        // ui_data.disableRefreshDisplay();
-        Serial.println(F("SSD1306 "));
-        Serial.println(_F(ERROR));
-    }
 }
 
-void display_rpm() {
+void display_rpm()
+{
     if (ui_data.display_pulse_length_integral) {
         display.print(RPM_SENSE_US_TO_RPM(ui_data.display_pulse_length_integral));
     } else {
@@ -171,19 +123,32 @@ void display_rpm() {
     display.println(_F(_rpm));
 }
 
-void display_duty_cycle_bar(uint8_t dc) {
+void display_duty_cycle_bar(uint8_t dc)
+{
     uint8_t width = (dc * (SCREEN_WIDTH - 4)) / MAX_DUTY_CYCLE;
     display.drawRect(0, SCREEN_HEIGHT - 11, SCREEN_WIDTH, 11, WHITE);
     display.fillRect(2, SCREEN_HEIGHT - 9, width, 7, WHITE);
-    if (data.max_pwm < MAX_DUTY_CYCLE) {
-        uint8_t max_pwm_pos = ((data.max_pwm * (SCREEN_WIDTH - 4)) / MAX_DUTY_CYCLE) + 2;
+
+    if (motor.getMaxDutyCycle() < MAX_DUTY_CYCLE) {
+        uint8_t max_pwm_pos = ((motor.getMaxDutyCycle() * (SCREEN_WIDTH - 4)) / MAX_DUTY_CYCLE) + 2;
         if (max_pwm_pos < (SCREEN_WIDTH - 2)) {
             display.drawFastVLine(max_pwm_pos, SCREEN_HEIGHT - 10, 9, INVERSE);
         }
     }
 }
 
-void refresh_display() {
+void display_current_limit()
+{
+    display.fillCircle(SCREEN_WIDTH - FONT_HEIGHT * 1 - 3, FONT_HEIGHT + 1, FONT_HEIGHT + 1, WHITE);
+    display.setTextSize(2);
+    display.setTextColor(INVERSE);
+    display.setCursor(SCREEN_WIDTH - FONT_HEIGHT * 2, 2);
+    display.print('C');
+    display.setTextColor(WHITE);
+}
+
+void refresh_display()
+{
     if (millis() > ui_data.refresh_timer)  {
         ui_data.refresh_timer = millis() + DISPLAY_REFRESH_TIME;
         ui_data.refresh_counter++;
@@ -202,8 +167,8 @@ void refresh_display() {
         display.clearDisplay();
         display.setTextSize(1);
         display.setCursor(0, 0);
-        if (data.control_mode == ControlModeEnum::PID) {
-            if (data.motor_state == MotorStateEnum::ON) {
+        if (motor.isVelocityMode()) {
+            if (motor.isOn()) {
                 if (data.pid_config == PidConfigEnum::OFF) {
                     char buf[8];
                     int len = sprintf_P(buf, PSTR("%u"), data.getSetPointRPM());
@@ -251,7 +216,7 @@ void refresh_display() {
             }
         }
         else {
-            if (data.motor_state == MotorStateEnum::ON) {
+            if (motor.isOn()) {
                 display.setTextSize(2);
                 display.setCursor(0, 5);
                 display_rpm();
@@ -265,48 +230,44 @@ void refresh_display() {
             }
         }
 
-#if HAVE_CURRENT_LIMIT
-
-        if (current_limit_tripped) {
-            // motor_stop(MotorStateEnum::CURRENT_LIMIT);
-            Serial.print(F("Current limit @ "));
-            Serial.println(current_limit_tripped - data.motor_start_time);
-            current_limit_tripped = 0;
-
-            // if (get_time_diff(current_limit_tripped, millis()) > 500) {   // display for 500ms
-            //     current_limit_tripped = 0;
-            // }
-            // else {
-            //     display.fillCircle(SCREEN_WIDTH - FONT_HEIGHT * 1 - 3, FONT_HEIGHT + 1, FONT_HEIGHT + 1, WHITE);
-            //     display.setTextSize(2);
-            //     display.setTextColor(INVERSE);
-            //     display.setCursor(SCREEN_WIDTH - FONT_HEIGHT * 2, 2);
-            //     display.print('C');
-            //     display.setTextColor(WHITE);
-            // }
-        }
-
-#endif
-
         constexpr uint8_t y = (SCREEN_HEIGHT - (FONT_HEIGHT * 2)) + 2;
         display.setTextSize(2);
-        if (data.motor_state == MotorStateEnum::ERROR) {
+        if (motor.getState() == MotorStateEnum::ERROR) {
             display.setCursor((SCREEN_WIDTH - (5 * FONT_WIDTH * 2)) / 2, y);
             display.print(_F(ERROR));
         }
-        else if (data.motor_state == MotorStateEnum::STALLED) {
+        else if (motor.getState() == MotorStateEnum::STALLED) {
             display.setCursor((SCREEN_WIDTH - (7 * FONT_WIDTH * 2)) / 2, y);
             display.print(_F(STALLED));
         }
-        else if (data.motor_state == MotorStateEnum::OFF) {
+        else if (motor.getState() == MotorStateEnum::OFF) {
             display.setCursor((SCREEN_WIDTH - (3 * FONT_WIDTH * 2)) / 2, y);
             display.print(_F(OFF));
         }
+
+#if HAVE_CURRENT_LIMIT
+
+    if (ui_data.display_current_limit_timer) {
+        uint32_t time;
+        // display for 2 seconds
+        if ((time = get_time_diff(ui_data.display_current_limit_timer, millis())) > 2000) {
+            ATOMIC_BLOCK(ATOMIC_FORCEON) {
+                ui_data.display_current_limit_timer = 0;
+            }
+        }
+        else {
+            display_current_limit();
+        }
+    }
+
+#endif
+
         display.display();
     }
 }
 
-void display_message(char *message, uint16_t time, uint8_t size) {
+void display_message(char *message, uint16_t time, uint8_t size)
+{
     const uint8_t y = (SCREEN_HEIGHT / 2) - (size * FONT_HEIGHT) + 3;
     const uint8_t x = (SCREEN_WIDTH / 2) - (strlen(message) * size * (FONT_WIDTH / 2));
     display.clearDisplay();
@@ -315,35 +276,6 @@ void display_message(char *message, uint16_t time, uint8_t size) {
     display.print(message);
     display.display();
     ui_data.refresh_timer = millis() + time;
-}
-
-
-
-// set RPM pulse length from poti value
-void calc_rpm_pulse_length() {
-    auto rpm = data.getSetPointRPM();
-    pid.set_point_rpm_pulse_length = RPM_SENSE_RPM_TO_US(rpm);
-#if RPM_SENSE_AVERAGING_FACTOR
-    data.rpm_sense_average = (rpm * (rpm / RPM_SENSE_AVERAGING_FACTOR)) / 30000;
-    Serial.print("rpm_sense_average ");
-    Serial.println(data.rpm_sense_average);
-#endif
-}
-
-// set duty cycle or RPM pulse length
-void update_motor_speed() {
-    if (data.control_mode == ControlModeEnum::DUTY_CYCLE) {
-#if RPM_SENSE_AVERAGING_FACTOR
-        data.rpm_sense_average = 0;
-#endif
-        pid.duty_cycle = data.getSetPointDutyCycle();
-        if (data.motor_state == MotorStateEnum::ON) {
-            set_motor_speed(pid.duty_cycle);
-        }
-    }
-    else {
-        calc_rpm_pulse_length();
-    }
 }
 
 static void led_brightness_str(char *message, uint8_t size) {
@@ -358,12 +290,12 @@ static void led_brightness_str(char *message, uint8_t size) {
 #if HAVE_CURRENT_LIMIT
 
 static void current_limit_str(char *message, uint8_t size) {
-    if (data.current_limit == CURRENT_LIMIT_DISABLED) {
+    if (current_limit.isDisabled()) {
         strcpy_P(message, _T(DISABLED));
     }
     else {
         PrintBuffer buf(message, size);
-        buf.print(CURRENT_LIMIT_DAC_TO_CURRENT(data.current_limit), 1);
+        buf.print(CURRENT_LIMIT_DAC_TO_CURRENT(current_limit.getLimit()), 1);
         buf.print('A');
     }
 }
@@ -385,7 +317,7 @@ void menu_display_value() {
         //display.println(message);
 
 #if HAVE_CURRENT_LIMIT
-        if (data.current_limit != CURRENT_LIMIT_DISABLED) {
+        if (!current_limit.isDisabled()) {
             display.print(F("Limit "));
             current_limit_str(message, sizeof(message));
             display.print(message);
@@ -417,7 +349,7 @@ void menu_display_value() {
         menu.displayTitle();
         switch(menu.getPosition()) {
             case MenuEnum::MENU_SPEED:
-                if (data.control_mode == ControlModeEnum::DUTY_CYCLE) {
+                if (motor.isDutyCycleMode()) {
                     PrintBuffer buf(message, sizeof(message));
                     buf.print(pid.duty_cycle * 100 / (float)MAX_DUTY_CYCLE, 1);
                     buf.print('%');
@@ -427,7 +359,7 @@ void menu_display_value() {
                 }
                 break;
             case MenuEnum::MENU_MODE:
-                strcpy_P(message, data.control_mode == ControlModeEnum::PID ? PSTR("Velocity") : PSTR("PWM"));
+                strcpy_P(message, motor.isVelocityMode() ? PSTR("Velocity") : PSTR("PWM"));
                 break;
             case MenuEnum::MENU_LED:
                 led_brightness_str(message, sizeof(message));
@@ -438,13 +370,13 @@ void menu_display_value() {
                 break;
 #endif
             case MenuEnum::MENU_PWM:
-                snprintf_P(message, sizeof(message), PSTR("%u%%"), data.max_pwm * 100 / MAX_DUTY_CYCLE);
+                snprintf_P(message, sizeof(message), PSTR("%u%%"), motor.getMaxDutyCycle() * 100 / MAX_DUTY_CYCLE);
                 break;
             case MenuEnum::MENU_BRAKE:
-                strcpy_P(message, data.brake_enabled ? _T(ENABLED) : _T(DISABLED));
+                strcpy_P(message, motor.isBrakeEnabled() ? _T(ENABLED) : _T(DISABLED));
                 break;
             case MenuEnum::MENU_STALL:
-                snprintf_P(message, sizeof(message), PSTR("%u ms"), data.max_stall_time);
+                snprintf_P(message, sizeof(message), PSTR("%u ms"), motor.getMaxStallTime());
                 break;
             default:
                 break;
@@ -458,11 +390,12 @@ void menu_display_value() {
     display.display();
 }
 
-bool update_motor_settings(int16_t value) {
+bool update_motor_settings(int16_t value)
+{
     if (value) {
         if (data.pid_config == PidConfigEnum::OFF) {
             data.changeSetPoint(value);
-            update_motor_speed();
+            motor.updateMotorSpeed();
             return true;
         }
         else {
@@ -485,9 +418,10 @@ bool update_motor_settings(int16_t value) {
     return false;
 }
 
-void knob_released(Button& btn, uint16_t duration) {
-    if (data.motor_state == MotorStateEnum::ON) {
-        if (data.control_mode == ControlModeEnum::PID) {
+void knob_released(Button& btn, uint16_t duration)
+{
+    if (motor.isOn()) {
+        if (motor.isVelocityMode()) {
             data.pid_config = static_cast<PidConfigEnum>((static_cast<uint8_t>(data.pid_config) + 1) % static_cast<uint8_t>(PidConfigEnum::MAX));
             ui_data.refreshDisplay();
         }
@@ -515,20 +449,22 @@ void knob_released(Button& btn, uint16_t duration) {
     }
 }
 
-void start_stop_button_pressed(Button& btn) {
+void start_stop_button_pressed(Button& btn)
+{
     if (menu.isClosed()) {
-        if (data.motor_state != MotorStateEnum::ON && !data.brake_enaged) {
+        if (motor.getState() != MotorStateEnum::ON) {
             knob.write(0);
-            motor_start();
+            motor.start();
         }
-        else if (data.motor_state == MotorStateEnum::ON) {
-            motor_stop(MotorStateEnum::OFF);
+        else if (motor.isOn()) {
+            motor.stop(MotorStateEnum::OFF);
             refresh_display();
         }
     }
 }
 
-void read_knob() {
+void read_knob()
+{
     if (ui_data.readKnobValue()) {
         if (menu.isMainMenuActive()) {
             if (menu.setPosition(knob.read() / KNOB_MENU_MULTIPLIER)) {
@@ -565,33 +501,27 @@ void read_knob() {
                             break;
 #if HAVE_CURRENT_LIMIT
                         case MenuEnum::MENU_CURRENT:
-                            new_value = data.current_limit + value;
-                            if (data.current_limit >= CURRENT_LIMIT_MAX && value > 0) {
-                                data.current_limit = CURRENT_LIMIT_DISABLED;
+                            new_value = current_limit.getLimit() + value;
+                            if (new_value >= CURRENT_LIMIT_MAX && value > 0) {
+                                current_limit.setLimit(CURRENT_LIMIT_DISABLED);
                             }
                             else {
-                                data.current_limit = max(CURRENT_LIMIT_MIN, min(CURRENT_LIMIT_MAX, new_value));
+                                current_limit.setLimit(new_value);
                             }
-                            set_current_limit();
+                            current_limit.updateLimit();
                             break;
 #endif
                         case MenuEnum::MENU_PWM:
-                            new_value = data.max_pwm + value;
-                            data.max_pwm = max(MIN_DUTY_CYCLE, min(MAX_DUTY_CYCLE, new_value));
+                            motor.setMaxDutyCycle(motor.getMaxDutyCycle() + value);
                             break;
                         case MenuEnum::MENU_STALL:
-                            new_value = data.max_stall_time + (value * 5);
-                            data.max_stall_time = max(STALL_TIME_MIN, min(STALL_TIME_MAX, new_value));
+                            motor.setMaxStallTime(motor.getMaxStallTime() + (value * 5));
                             break;
                         case MenuEnum::MENU_MODE:
-                            if (data.control_mode == ControlModeEnum::PID) {
-                                data.setControlMode(ControlModeEnum::DUTY_CYCLE);
-                            } else {
-                                data.setControlMode(ControlModeEnum::PID);
-                            }
+                            motor.toggleMode();
                             break;
                         case MenuEnum::MENU_BRAKE:
-                            data.brake_enabled = !data.brake_enabled;
+                            motor.enableBrake(!motor.isBrakeEnabled());
                             break;
                         default:
                             break;
@@ -620,46 +550,14 @@ void read_knob() {
     }
 }
 
-#if HAVE_CURRENT_LIMIT
-
-void set_current_limit() {
-    // for calibration:
-    // PWM DAC 0-255 = 0-135mV with a 1000K/27K voltage divider
-    // 0.003R shunt, 1mV = 0.333A, ~0.5A per step...
-    // LM393 input offset voltage 1-2mV
-    analogWrite(PIN_CURRENT_LIMIT, data.current_limit);
-    if (data.current_limit == CURRENT_LIMIT_DISABLED) {
-        pinMode(PIN_CURRENT_LIMIT_OVERRIDE, OUTPUT);
-        digitalWrite(PIN_CURRENT_LIMIT_OVERRIDE, HIGH);     // set comparator vref to 5V >1000A
-    }
-    else {
-        digitalWrite(PIN_CURRENT_LIMIT_OVERRIDE, LOW);
-        pinMode(PIN_CURRENT_LIMIT_OVERRIDE, INPUT);         // floating = use current limit
-    }
-}
-
-#endif
-
 void setup() {
 
     Serial.begin(115200);
 
-    digitalWrite(PIN_BRAKE, LOW);
-    digitalWrite(PIN_MOTOR_PWM, LOW);
-    pinMode(PIN_MOTOR_PWM, OUTPUT);
-    pinMode(PIN_BRAKE, OUTPUT);
-
-    pinMode(PIN_CURRENT_LIMIT, OUTPUT);
-#if HAVE_CURRENT_LIMIT
-    pinMode(PIN_CURRENT_LIMIT_INDICATOR, INPUT);
-#else
-    digitalWrite(PIN_CURRENT_LIMIT_OVERRIDE, HIGH);
-    pinMode(PIN_CURRENT_LIMIT_OVERRIDE, OUTPUT);
-#endif
+    motor.begin();
+    current_limit.begin();
 
     pinMode(PIN_LED_DIMMER, OUTPUT);
-
-	pinMode(PIN_RPM_SIGNAL, INPUT);
 
     pinMode(PIN_ROTARY_ENC_DT, INPUT);
     pinMode(PIN_ROTARY_ENC_CLK, INPUT);
@@ -678,11 +576,10 @@ void setup() {
 
     read_eeprom();
 
-#if HAVE_CURRENT_LIMIT
-    set_current_limit();
-#endif
-
     setup_display();
+    // disable current limit signal LED
+    digitalWrite(PIN_CURRENT_LIMIT_LED, LOW);
+
     menu.add(MenuEnum::MENU_SPEED, PSTR("Speed"));
     menu.add(MenuEnum::MENU_MODE, PSTR("Mode"));
     menu.add(MenuEnum::MENU_LED, PSTR("LED Brightness"));
@@ -695,77 +592,28 @@ void setup() {
     menu.add(MenuEnum::MENU_INFO, PSTR("Info"));
     menu.add(MenuEnum::MENU_EXIT, PSTR("Exit & Save"));
 
-    // RPM sensing
-    data.setControlMode(data.control_mode);
-    init_capture_timer();
+    ATOMIC_BLOCK(ATOMIC_FORCEON) {
+        TCCR1A = 0;
+        TCCR1B = TIMER1_PRESCALER_BV;
+        TCCR2B = (TCCR2B & 0b11111000) | TIMER2_PRESCALER_BV;
 
-    // setup timer2 PWM
-    TCCR2B = (TCCR2B & 0b11111000) | TIMER2_PRESCALER;
+        rpm_sense.begin();
 
 #if HAVE_INTERRUPTS
-    setup_interrupts();
+        setup_interrupts();
 #endif
+    }
 
     char message[16];
     set_version(message, sizeof(message));
     Serial.println(message);
     display_message(message, DISPLAY_BOOT_VERSION_TIMEOUT, 1);
+
+    current_limit.enable(true);
 }
 
-// stop motor
-void motor_stop(MotorStateEnum state) {
-#if DEBUG_MOTOR_SPEED
-    if (data.motor_state != state) {
-        Serial.print(F("motor_stop="));
-        Serial.println(state);
-    }
-#endif
-    cli();
-    set_motor_speed(0);
-    data.motor_state = state;
-    sei();
-    refresh_display();
-
-    char message[16];
-    switch (state) {
-    case MotorStateEnum::ERROR:
-        strcpy_P(message, _T(ERROR));
-        break;
-    case MotorStateEnum::STALLED:
-        strcpy_P(message, _T(STALLED));
-        break;
-    case MotorStateEnum::CURRENT_LIMIT:
-        strcpy_P(message, PSTR("CURRENT"));
-        break;
-    case MotorStateEnum::BREAKING:
-    default:
-        strcpy_P(message, _T(BREAKING));
-        break;
-    }
-    display_message(message, DISPLAY_MENU_TIMEOUT / 2);
-    data.pid_config = PidConfigEnum::OFF;
-}
-
-// start motor
-void motor_start() {
-    cli();
-    ui_data = UIData_t();
-    data.motor_state = MotorStateEnum::ON;
-    data.motor_start_time = millis();
-    reset_capture_timer();
-    pid.reset();
-    if (data.control_mode == ControlModeEnum::DUTY_CYCLE) {
-        update_motor_speed();
-    }
-    else {
-        calc_rpm_pulse_length();
-        set_motor_speed(VELOCITY_START_DUTY_CYCLE);
-    }
-    sei();
-    refresh_display();
-}
-
-void update_pid_cfg() {
+void update_pid_cfg()
+{
     String str = Serial.readStringUntil('\n');
     char *a, *b, *c;
     a = strtok(str.begin(), ",\r\n");
@@ -893,143 +741,30 @@ void loop() {
                 start_stop_button_pressed(*(Button *)(nullptr));
                 break;
             case 'd':
-                data.setControlMode(ControlModeEnum::DUTY_CYCLE);
+                motor.setMode(ControlModeEnum::DUTY_CYCLE);
                 break;
             case 'r':
-                data.setControlMode(ControlModeEnum::PID);
+                motor.setMode(ControlModeEnum::PID);
                 break;
-#if HAVE_CURRENT_LIMIT
-            case 't':
-                current_limit_tripped = millis();
-                break;
-#endif
             case '+':
             case '*':
                 data.changeSetPoint(POTI_RANGE / (ch == '*' ? 10 : 128));
-                update_motor_speed();
+                motor.updateMotorSpeed();
                 break;
             case '-':
             case '/': {
                 data.changeSetPoint(POTI_RANGE / (ch == '/' ? 10 : 128));
-                update_motor_speed();
+                motor.updateMotorSpeed();
             }
             break;
-#if DEBUG_PID_CONTROLLER
-            case 'W': {
-                    data.set_point_input = POTI_MIN;
-                    pid.set_point_rpm_pulse_length = RPM_SENSE_RPM_TO_US(pid_test_set_points[0]);
-                    pid_test_duration = 5000;
-
-                    update_pid_cfg();
-
-                    motor_stop(MotorStateEnum::OFF);
-                    Serial.println(F("PID test"));
-                    delay(PID_TEST_WAIT);
-
-                    data.setControlMode(PID);
-                    // data.input_mode = VALUE;
-
-                    pid_test_timer_start = millis();
-                    pid_test_timer_end = pid_test_timer_start + pid_test_duration;
-                    pid_test_counter = 0;
-                    pid_test_micros_offset = micros() % 10000;
-                    motor_start();
-                }
-                break;
-            case 'F':
-                pid_enable_serial_output = !pid_enable_serial_output;
-                break;
-
-            case '4':
-                pid.Kp += pid_tune_increment;
-                break;
-            case '1':
-                pid.Kp -= pid_tune_increment;
-                break;
-            case '5':
-                pid.Ki += pid_tune_increment;
-                break;
-            case '2':
-                pid.Ki -= pid_tune_increment;
-                break;
-            case '6':
-                pid.Kd += pid_tune_increment;
-                break;
-            case '3':
-                pid.Kd -= pid_tune_increment;
-                break;
-
-            case '7':
-                if (pid_tune_increment > 10) {
-                    pid_tune_increment = 10;
-                }
-                pid_tune_increment /= 10.0;
-                if (pid_tune_increment < 0.00001) {
-                    pid_tune_increment = 0.00001;
-                }
-                break;
-            case '8':
-                pid_tune_increment = 0;
-                break;
-            case '9':
-                if (pid_tune_increment < 0.00001) {
-                    pid_tune_increment = 0.00001;
-                }
-                pid_tune_increment *= 10.0;
-                if (pid_tune_increment > 10) {
-                    pid_tune_increment = 10;
-                }
-                break;
-            case ',':
-                rpm_sense_average_count--;
-                Serial.println(rpm_sense_average_count);
-                break;
-            case '.':
-                rpm_sense_average_count++;
-                Serial.println(rpm_sense_average_count);
-                break;
-#endif
-#if DEBUG_RPM_SIGNAL
-            case ' ':
-                dump_capture_timer_values();
-                break;
-#endif
         }
     }
 #endif
 
     read_knob();
-
     button1.update();
     button2.update();
-
     data.setLedBrightness();
-
-    // check if the RPM signal has not been updated for a given period of time
-    if (millis() > capture_timer_last_signal_millis() + data.max_stall_time) {
-        if (data.brake_enaged) {
-            digitalWrite(PIN_BRAKE, LOW);
-            data.brake_enaged = false;
-            if (menu.isClosed()) {
-                ui_data.refreshDisplay();
-            }
-        }
-        if (data.motor_state == MotorStateEnum::ON && !IS_PID_TUNING) {
-            // debug_printf_P(PSTR("STALL %lu > %lu\n"), millis(), capture_timer_last_signal_millis() + MOTOR_MAX_STALL_TIME);
-            motor_stop(MotorStateEnum::STALLED);
-        }
-    }
-
+    motor.loop();
     refresh_display();
-
-#if DEBUG_PID_CONTROLLER
-    if (pid_test_timer_start) {
-        if (millis() > pid_test_timer_end) {
-            data.set_point_input = 0;
-            pid_test_timer_start = 0;
-            motor_stop(MotorStateEnum::OFF);
-            Serial.println(F("---END---\n\n"));
-        }
-    }
-#endif
 }
