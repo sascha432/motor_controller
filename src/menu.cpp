@@ -22,7 +22,7 @@ void Menu::display()
     _displayItem(12, _position);
     _displayItem(24, _position + 1);
     // highlighjt
-    _display.fillRoundRect(5, 10, SCREEN_WIDTH - 15, 12, 4, INVERSE);
+    _display.fillRoundRect(5, 10, SCREEN_WIDTH - 15, 12, 4, SSD1306_INVERTDISPLAY);
 
     // scrollbar
     _display.drawRoundRect(SCREEN_WIDTH - 8, 0, 8, SCREEN_HEIGHT, 3, WHITE);

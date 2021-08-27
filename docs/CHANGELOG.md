@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.4
+
+ - Using size optimized version of Adafruit SSD1306 to free 4.2KB flash memory
+ - Using rising and falling edge for RPM detection to work more precisely
+ - Reduced clock cycles required for the capture ISR
+
 ## 1.0.3
 
 - No display refresh with active current limit (I2C causes interferences with interrupts and timing issues)
@@ -17,6 +23,7 @@
 - Dynamic averaging of the RPM sense pulses depending on the set RPM
 - Improved menu acceleration
 - Support for PCB Rev1.3
+- Reduced min. RPM in velocity mode to 300
 
 ## 1.0.1
 

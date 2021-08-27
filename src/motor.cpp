@@ -21,19 +21,6 @@ inline void update_duty_cycle()
     ui_data.updateDutyCyle();
 }
 
-Motor::Motor() : _mode(ControlModeEnum::PID), _state(MotorStateEnum::OFF), _startTime(0), _maxPWM(MAX_DUTY_CYCLE), _dutyCycle(0), _maxStallTime(1000), _brake(true)
-{
-}
-
-void Motor::begin()
-{
-    digitalWrite(PIN_BRAKE, LOW);
-    pinMode(PIN_BRAKE, OUTPUT);
-
-    digitalWrite(PIN_MOTOR_PWM, LOW);
-    pinMode(PIN_MOTOR_PWM, OUTPUT);
-}
-
 void Motor::loop()
 {
 #if HAVE_CURRENT_LIMIT
@@ -51,7 +38,7 @@ void Motor::loop()
             stop(MotorStateEnum::STALLED);
         }
         else if (digitalRead(PIN_BRAKE)) { // release brake
-            digitalWrite(PIN_BRAKE, LOW);
+            setBrake(false);
             if (menu.isClosed()) {
                 ui_data.refreshDisplay();
             }
@@ -63,7 +50,7 @@ void Motor::start()
 {
     if (digitalRead(PIN_BRAKE)) {
         // if the brake is still engaged, for example turning the motor off and on quickly, turn it off, update the display and wait 100ms
-        digitalWrite(PIN_BRAKE, LOW);
+        setBrake(false);
         ui_data.refreshDisplay();
         delay(100);
 
@@ -101,17 +88,18 @@ void Motor::stop(MotorStateEnum state)
     // current_limit.enable(false);
     refresh_display();
 
-    char message[16];
+    auto message = _F(OFF);
     switch (state) {
     case MotorStateEnum::ERROR:
-        strcpy_P(message, _T(ERROR));
+        message = _F(ERROR);
         break;
     case MotorStateEnum::STALLED:
-        strcpy_P(message, _T(STALLED));
+        message = _F(STALLED);
         break;
-    case MotorStateEnum::BREAKING:
+    case MotorStateEnum::BRAKING:
+        message = motor.isBrakeEnabled() ? _F(BRAKING) : _F(OFF);
+        break;
     default:
-        strcpy_P(message, _T(BREAKING));
         break;
     }
     display_message(message, DISPLAY_MENU_TIMEOUT / 2);
@@ -143,17 +131,12 @@ void Motor::setSpeed(uint8_t speed)
     }
     analogWrite(PIN_MOTOR_PWM, speed);
     if (speed == 0) {
-        digitalWrite(PIN_MOTOR_PWM, LOW);
-        if (_brake) {
-            ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-                if (isOn()) {
-                    _state = MotorStateEnum::OFF;
-                }
-                digitalWrite(PIN_MOTOR_PWM, LOW);
-                delayMicroseconds(50);
+        ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+            if (isOn()) {
+                _state = MotorStateEnum::OFF;
             }
-            digitalWrite(PIN_BRAKE, HIGH);
         }
+        setBrake(true);
     }
 }
 
@@ -173,15 +156,6 @@ void Motor::updateMotorSpeed()
     }
 }
 
-void Motor::toggleMode()
-{
-    if (isVelocityMode()) {
-        setMode(ControlModeEnum::DUTY_CYCLE);
-    }
-    else {
-        setMode(ControlModeEnum::PID);
-    }
-}
 
 void Motor::setMode(ControlModeEnum mode)
 {
@@ -205,22 +179,10 @@ void Motor::_calcPulseLength()
     // Serial.print("rpm_sense_average ");
     // Serial.println(data.rpm_sense_average);
 #endif
+#if 0
+    Serial.print(rpm);
+    Serial.print(' ');
+    Serial.println(pid.set_point_rpm_pulse_length);
+#endif
 }
 
-void Motor::setMaxDutyCycle(uint8_t maxPWM)
-{
-    _maxPWM = max(MIN_DUTY_CYCLE, min(MAX_DUTY_CYCLE, maxPWM));
-}
-
-void Motor::setMaxStallTime(uint16_t maxStallTime)
-{
-    _maxStallTime = max(STALL_TIME_MIN, min(STALL_TIME_MAX, maxStallTime));
-}
-
-void Motor::enableBrake(bool enable)
-{
-    _brake = enable;
-    if (!_brake) {
-        digitalWrite(PIN_BRAKE, LOW);
-    }
-}

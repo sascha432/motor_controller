@@ -10,24 +10,18 @@
 
 #define VERSION_MAJOR                           1
 #define VERSION_MINOR                           0
-#define VERSION_PATCH                           3
+#define VERSION_PATCH                           4
+
+#define HAVE_COMPILED_ON_DATE                   1
 
 #if DEBUG
-#ifndef DEBUG_PID_CONTROLLER
-#define DEBUG_PID_CONTROLLER                    1
-#endif
-#define DEBUG_INPUTS                            1
+#define DEBUG_INPUTS                            0
 #define DEBUG_RPM_SIGNAL                        0
 #define DEBUG_MOTOR_SPEED                       1
 #else
-#define DEBUG_PID_CONTROLLER                    0
 #define DEBUG_INPUTS                            0
 #define DEBUG_RPM_SIGNAL                        0
 #define DEBUG_MOTOR_SPEED                       0
-#endif
-
-#ifndef DEBUG_TRIGGERED_INTERRUPTS
-#define DEBUG_TRIGGERED_INTERRUPTS              0
 #endif
 
 #ifndef HAVE_SERIAL_COMMANDS
@@ -40,7 +34,7 @@
 #endif
 
 #ifndef HAVE_DEBUG_RPM_SIGNAL_OUT
-// output RPM signal on port PIN_RPM_SGINAL_DEBUG_OUT
+// output RPM signal on port PIN_RPM_SGINAL_DEBUG_OUT (D13/PB5/SCK) which is available on the debug pin header
 #define HAVE_DEBUG_RPM_SIGNAL_OUT               0
 #endif
 
@@ -186,7 +180,7 @@
 #define DISPLAY_DUTY_CYCLE_MULTIPLIER           10UL
 
 // min. and mx. RPM that can be selected
-#define RPM_MIN                                 300
+#define RPM_MIN                                 100
 #define RPM_MAX                                 4500
 
 #define STALL_TIME_MIN                          250
@@ -267,11 +261,11 @@
 #ifndef HAVE_VOLTAGE_DETECTION
 #define HAVE_VOLTAGE_DETECTION                  1
 #endif
-// voltage divider 10K/100K, needs to be adjusted to real values to be accurate
-#define VOLTAGE_DETECTION_R1                    10.0f
-#define VOLTAGE_DETECTION_R2                    100.0f
+// voltage divider 100K/1000K, needs to be adjusted to real values to be accurate
+#define VOLTAGE_DETECTION_R1                    100000UL
+#define VOLTAGE_DETECTION_R2                    1000000UL
 #ifndef VOLTAGE_DETECTION_CALIBRATION
-#define VOLTAGE_DETECTION_CALIBRATION           1.0f
+#define VOLTAGE_DETECTION_CALIBRATION           1.0
 #endif
 #define VOLTAGE_DETECTION_DIVIDER               (((VOLTAGE_DETECTION_R2 + VOLTAGE_DETECTION_R1) / VOLTAGE_DETECTION_R1) * VOLTAGE_DETECTION_CALIBRATION)
 
@@ -313,6 +307,34 @@ extern uint16_t pid_test_counter;
 
 #endif
 
+// add type for variable to start
+// (uint8_t)0
+// 0UL
+// 0.0f
+// etc...
+#define __for_range_arg_count(...)                          __for_range_arg_count_(,##__VA_ARGS__,3,2,1,0)
+#define __for_range_arg_count_(a,b,c,d,cnt,...)             cnt
+
+#define __for_range_first_arg(n0, n1, ...)                  n1
+#define __for_range_second_arg(n0, n1, n2, ...)             n2
+
+#define for_range(var, start, end, ...)                     for(auto var = ((__for_range_arg_count(end, ...) == 2 ? (uint8_t)start : start); var < end; var += (__for_range_arg_count(end, ...) == 0 ? 1 : __for_range_first_arg(0, ##__VA_ARGS__, 0)))
+
+#if HAVE_INT24
+
+#include <stdint.h>
+#include <stddef.h>
+
+using uint24_t = __uint24;
+using int24_t = __int24;
+
+#else
+
+using uint24_t = uint32_t;
+using int24_t = int32_t;
+
+#endif
+
 enum class ControlModeEnum : uint8_t {
     DUTY_CYCLE = 0,
     PID,
@@ -325,15 +347,17 @@ enum class MotorStateEnum : uint8_t {
     STARTUP,
     STALLED,
     ERROR,
-    BREAKING
+    BRAKING
     // CURRENT_LIMIT
 };
 
 enum class PidConfigEnum : uint8_t {
     OFF = 0,
-    KP,
+    KP = 1,
     KI,
     KD,
+    OMUL,
+    DTMUL,
     SAVE,
     RESTORE,
     MAX
@@ -406,6 +430,8 @@ public:
     void menuResetAutoCloseTimer();
     bool readKnobValue();
     void updateDutyCyle();
+    void updateDutyCyle(uint32_t length);
+    void updateRpmPulseWidth(uint32_t length);
 
     uint32_t knob_read_timer;
     volatile uint32_t refresh_timer;
@@ -415,15 +441,66 @@ public:
     volatile uint32_t display_current_limit_timer;
 };
 
+inline void UIData_t::refreshDisplay()
+{
+    refresh_timer = 0;
+}
+
+inline void UIData_t::disableRefreshDisplay()
+{
+    refresh_timer = ~0;
+}
+
+inline void UIData_t::menuResetAutoCloseTimer()
+{
+    refresh_timer = millis() + DISPLAY_MENU_TIMEOUT;
+}
+
+inline bool UIData_t::readKnobValue()
+{
+    if (millis() <= knob_read_timer) {
+        return false;
+    }
+    knob_read_timer = millis() + KNOB_READ_TIME;
+    return true;
+}
+
 extern Data_t data;
 extern UIData_t ui_data;
 
 #include "menu.h"
+#include <Adafruit_SSD1306.h>
 
 extern Menu menu;
+extern Adafruit_SSD1306 display;
 
 void update_duty_cycle();
-void display_message(char *message, uint16_t time, uint8_t size = 2);
+
+inline void display_message(const char *message, uint16_t time, uint8_t size = 2, size_t len = ~0U)
+{
+    if (len == ~0U) {
+        len = strlen(message);
+    }
+    const uint8_t y = (SCREEN_HEIGHT / 2) - (size * FONT_HEIGHT) + 3;
+    const uint8_t x = (SCREEN_WIDTH / 2) - (len * size * (FONT_WIDTH / 2));
+    display.clearDisplay();
+    display.setCursor(x, y);
+    display.setTextSize(size);
+    display.print(message);
+    display.display();
+    ui_data.refresh_timer = millis() + time;
+}
+
+inline void display_message(const __FlashStringHelper *message, uint16_t time, uint8_t size = 2)
+{
+    const size_t len = strlen_P(reinterpret_cast<PGM_P>(message));
+    const size_t strSize = len + 1;
+    char buf[strSize];
+    memcpy_P(buf, message, strSize);
+    display_message(buf, time, size, len);
+}
+
 void menu_display_value();
 void print_pid_cfg(char *buffer, size_t len);
 void refresh_display();
+float getVoltage();

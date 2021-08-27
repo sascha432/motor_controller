@@ -10,12 +10,6 @@
 #include "motor.h"
 #include "current_limit.h"
 
-#if DEBUG_TRIGGERED_INTERRUPTS
-volatile InterruptTriggeredFlags_t interrupt_trigger_flags = { false, false };
-#endif
-
-volatile uint8_t pinb_state_last;
-
 void pciSetup(byte pin)
 {
     *digitalPinToPCMSK(pin) |= bit(digitalPinToPCMSKbit(pin));
@@ -24,6 +18,8 @@ void pciSetup(byte pin)
 }
 
 #if HAVE_INTERRUPTS
+
+volatile uint8_t pinb_state_last;
 
 void setup_interrupts()
 {
@@ -38,22 +34,16 @@ void setup_interrupts()
 
 ISR(PCINT0_vect) {
 
-#define PINB_STATE_CHANGED(mask) (pinb_changes & mask)
+#define PINB_STATE_CHANGED(mask) (pinb_change_set & mask)
 
     // track changes for PINB
-    uint8_t pinb_changes = PINB ^ pinb_state_last;
+    uint8_t pinb_change_set = PINB ^ pinb_state_last;
     pinb_state_last = PINB;
 
 #if HAVE_CURRENT_LIMIT
 
     if (PINB_STATE_CHANGED(PIN_CURRENT_LIMIT_INDICATOR_MASK)) {
-        bool state = (PINB && PIN_CURRENT_LIMIT_INDICATOR_MASK);
-#if DEBUG_TRIGGERED_INTERRUPTS
-        if (state) {
-            SET_INTERRUPT_TRIGGER(current_limit_flag, state);
-        }
-#endif
-        current_limit.pinISR(state);
+        current_limit.pinISR((PINB && PIN_CURRENT_LIMIT_INDICATOR_MASK));
     }
 
 #endif
@@ -61,11 +51,10 @@ ISR(PCINT0_vect) {
 #if HAVE_DEBUG_RPM_SIGNAL_OUT
 
     if (PINB_STATE_CHANGED(PIN_RPM_SIGNAL_MASK)) { // state changed
-        SET_INTERRUPT_TRIGGER(rpm_sense_flag, true);
         if (PINB & PIN_RPM_SIGNAL_DEBUG_OUT_MASK) { // toggle PIN_RPM_SIGNAL_DEBUG_OUT
-            PINB &= PIN_RPM_SIGNAL_DEBUG_OUT_MASK;
+            PORTB &= PIN_RPM_SIGNAL_DEBUG_OUT_MASK;
         } else {
-            PINB |= PIN_RPM_SIGNAL_DEBUG_OUT_MASK;
+            PORTB |= PIN_RPM_SIGNAL_DEBUG_OUT_MASK;
         }
     }
 

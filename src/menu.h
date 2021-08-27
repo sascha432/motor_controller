@@ -4,12 +4,12 @@
 
 #pragma once
 
-#include <Arduino.h>
-#include <Adafruit_SSD1306.h>
 #include "progmem_strings.h"
+#include <Adafruit_SSD1306.h>
+#include <Arduino.h>
 
-#define FONT_WIDTH                              6
-#define FONT_HEIGHT                             8
+#define FONT_WIDTH  6
+#define FONT_HEIGHT 8
 
 enum class MenuEnum : uint8_t {
     MENU_SPEED = 0,
@@ -28,21 +28,23 @@ enum class MenuEnum : uint8_t {
 
 class Menu {
 public:
-
     Menu(uint8_t count, Adafruit_SSD1306 &display);
-    inline Menu(MenuEnum count, Adafruit_SSD1306 &display) : Menu(static_cast<uint8_t>(count), display) {}
+    inline Menu(MenuEnum count, Adafruit_SSD1306 &display) :
+        Menu(static_cast<uint8_t>(count), display) { }
     ~Menu();
 
     void display();
     void displayTitle();
 
     void add(uint8_t index, PGM_P name);
-    inline void add(MenuEnum index, PGM_P name) {
+    inline void add(MenuEnum index, PGM_P name)
+    {
         add(static_cast<uint8_t>(index), name);
     }
 
     bool isOpen() const;
-    bool isClosed() const {
+    bool isClosed() const
+    {
         return !isOpen();
     }
     bool isActive() const;
@@ -53,18 +55,22 @@ public:
     void up();
     void down();
     bool setPosition(uint8_t position);
-    inline bool setPosition(MenuEnum position) {
+    inline bool setPosition(MenuEnum position)
+    {
         return setPosition(static_cast<uint8_t>(position));
     }
 
-    uint8_t getPositionInt() const {
+    uint8_t getPositionInt() const
+    {
         return _position;
     }
-    inline MenuEnum getPosition() const {
+    inline MenuEnum getPosition() const
+    {
         return static_cast<MenuEnum>(_position);
     }
 
-    inline uint8_t getSize() const {
+    inline uint8_t getSize() const
+    {
         return _size;
     }
 

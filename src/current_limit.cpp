@@ -33,6 +33,9 @@ void CurrentLimit::begin()
 void CurrentLimit::enable(bool state)
 {
     ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+        if (_limit == CURRENT_LIMIT_DISABLED) {
+            state = false;
+        }
         _enabled = state;
         _state = CurrentLimitStateEnum::NOT_TRIPPED;
         _timer = 0;

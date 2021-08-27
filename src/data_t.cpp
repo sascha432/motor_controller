@@ -11,7 +11,7 @@
 Data_t::Data_t() :
     pid_config(PidConfigEnum::OFF),
     led_brightness(50 * 100 / LED_MAX_PWM),
-    rpm_sense_average(4),
+    rpm_sense_average(0),
 #if HAVE_LED_FADING
     led_fade_timer(0),
 #endif

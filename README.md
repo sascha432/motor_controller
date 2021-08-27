@@ -6,8 +6,7 @@ I am using this controller for a 500W drill press with a constant RPM from 300-3
 
 * Input voltage 13.5-40V
 * DC Motor controller 20A continuously, 31.25kHz PWM
-* ~~Discrete 1.2A MOSFET driver~~
-* 4A MOSFET driver (running @ ~2.8A)
+* 4A MOSFET driver
 * Velocity mode, constant RPM from 300 to 3500rpm/min
 * PWM mode, duty cycle 5-100% (like regular drills)
 * Opto Interrupter for RPM sensing

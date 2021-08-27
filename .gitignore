@@ -1,0 +1,5 @@
+.pio
+.vscode/*
+*.code-workspace
+lib/readme.txt
+lib-extra/*
