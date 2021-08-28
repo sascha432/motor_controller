@@ -705,6 +705,29 @@ void loop() {
     if (Serial.available()) {
         uint8_t ch;
         switch(ch = Serial.read()) {
+            case 'I': {
+                auto mode = motor.getMode();
+                motor.setMode(ControlModeEnum::DUTY_CYCLE);
+                motor.setDutyCycle(VELOCITY_START_DUTY_CYCLE);
+                motor.start();
+                auto avg = data.rpm_sense_average;
+                for(uint8_t i = 20; i < 200; i += 10) {
+                    if (!motor.isOn()) {
+                        break;
+                    }
+                    motor.setSpeed(i);
+                    data.rpm_sense_average = 64;
+                    delay(2500);
+                    Serial.print(i);
+                    Serial.print(' ');
+                    Serial.print(getVoltage(), 3);
+                    Serial.print(' ');
+                    Serial.println(RPM_SENSE_US_TO_RPM(ui_data.display_pulse_length_integral));
+                }
+                motor.stop();
+                motor.setMode(mode);
+                data.rpm_sense_average = avg;
+            } break;
             case 'v':
                 Serial.print("Voltage ");
                 for(uint8_t i = 0; i < 10; i++) {
