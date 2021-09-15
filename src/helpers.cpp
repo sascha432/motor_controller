@@ -38,56 +38,89 @@ int count_decimals(double value, uint8_t max_precision, uint8_t max_decimals) {
     return precision;
 }
 
-int Serial_print_float(double value, uint8_t max_precision, uint8_t max_decimals) {
-    return Serial.print(value, count_decimals(value, max_precision, max_decimals));
-}
-
-
-int Serial_printf(const char *format, ...) {
+size_t Print::__printf(vsnprint_t func, const char *format, va_list arg)
+{
     char buf[64];
     char *temp = buf;
-    va_list arg;
-    va_start(arg, format);
-    int len = vsnprintf(buf, sizeof(buf), format, arg);
+    int len = func(buf, sizeof(buf), format, arg);
     if (len >= (int)sizeof(buf) - 1) {
         temp = (char *)malloc(len + 2);
         if (!temp) {
             return 0;
         }
-        len = vsnprintf(temp, len, format, arg);
+        len = func(temp, len, format, arg);
     }
-    if (len > 0) {
-        Serial.write(reinterpret_cast<const char *>(temp), len);
-    }
+    write(temp, len);
     if (temp != buf) {
         free(temp);
     }
-    va_end(arg);
     return len;
 }
 
-int Serial_printf_P(PGM_P format, ...) {
-    char buf[64];
-    char *temp = buf;
+size_t Print::printf(const char *format, ...)
+{
     va_list arg;
     va_start(arg, format);
-    int len = vsnprintf_P(buf, sizeof(buf), format, arg);
-    if (len >= (int)sizeof(buf) - 1) {
-        temp = (char *)malloc(len + 2);
-        if (!temp) {
-            return 0;
-        }
-        len = vsnprintf_P(temp, len, format, arg);
-    }
-    if (len > 0) {
-        Serial.write(reinterpret_cast<const char *>(temp), len);
-    }
-    if (temp != buf) {
-        free(temp);
-    }
+    size_t result = __printf( vsnprintf, format, arg);
     va_end(arg);
-    return len;
+    return result;
 }
+
+size_t Print::printf_P(PGM_P format, ...)
+{
+    va_list arg;
+    va_start(arg, format);
+    size_t result = __printf(vsnprintf_P, format, arg);
+    va_end(arg);
+    return result;
+}
+
+#if DEBUG
+
+uint8_t _debug_level = 0;
+
+void debug_print_millis()
+{
+    Serial.printf_P(PSTR("+REM=%05.5lu "), millis());
+    Serial.flush();
+}
+
+void __debug_printf(const char *format, ...)
+{
+    debug_print_millis();
+    va_list arg;
+    va_start(arg, format);
+    Serial.__printf(vsnprintf_P, format, arg);
+    Serial.flush();
+    va_end(arg);
+}
+// #define debug_printf(fmt, ...)              { debug_print_millis(); Serial.printf_P(PSTR(fmt), ##__VA_ARGS__); Serial.flush(); }
+
+void __debug_print_memory(void *ptr, size_t size)
+{
+    debug_print_millis();
+    auto data = (uint8_t *)ptr;
+    uint8_t n = 0;
+    Serial.printf_P(PSTR("[%p:%04x]"), ptr, size);
+    while(size--) {
+        Serial.printf_P(PSTR("%02x"), *data++);
+        if ((++n % 2 == 0) && size > 1) {
+            Serial.print(' ');
+            Serial.flush();
+        }
+    }
+    Serial.println();
+    Serial.flush();
+}
+
+int assert_failed()
+{
+    Serial.print(F("\nASSERT FAILED\n"));
+    Serial.flush();
+    abort();
+}
+
+#endif
 
 int Serial_print_bin(uint32_t value, uint8_t bits) {
     auto bit = bits;
@@ -244,7 +277,7 @@ uint8_t *get_signature(uint8_t *sig) {
     return sig;
 }
 
-unique_ptr<uint8_t> get_mcu_type(char *&mcu, uint8_t *&sig, uint8_t *&fuses) {
+std::unique_ptr<uint8_t> get_mcu_type(char *&mcu, uint8_t *&sig, uint8_t *&fuses) {
     const size_t mcu_size = 17;
     auto buffer = new uint8_t[3 + 3 + mcu_size + 1];
     auto ptr = buffer;
@@ -290,43 +323,5 @@ unique_ptr<uint8_t> get_mcu_type(char *&mcu, uint8_t *&sig, uint8_t *&fuses) {
         }
     }
 
-    return unique_ptr<uint8_t>(buffer);
+    return std::unique_ptr<uint8_t>(buffer);
 }
-
-#if DEBUG
-uint8_t _debug_level = DEBUG_LEVEL;
-
-void debug_print_millis() {
-    Serial_printf_P(PSTR("+DBG%05lu: "), millis());
-}
-
-// PrintExEx SerialEx = Serial;
-
-// void PrintExEx::printf_P(PGM_P format, ...) {
-// }
-
-// void PrintExEx::vprintf(const char *format, ...) {
-//     char buf[64];
-//     size_t len;
-//     va_list arg;
-//     va_start(arg, format);
-//     if ((len = vsnprintf(buf, sizeof(buf), format, arg)) == sizeof(buf)) {
-//         char *ptr = (char *)malloc(len + 2);
-//         if (ptr) {
-//             vsnprintf(ptr, len, format, arg);
-//             print(ptr);
-//             free(ptr);
-//         }
-//     } else {
-//         print(buf);
-//     }
-//     va_end(arg);
-// }
-
-// PrintExEx::PrintExEx(Stream &stream) : PrintEx(stream), _stream(stream) {
-// }
-
-// PrintExEx::~PrintExEx() {
-// }
-
-#endif
