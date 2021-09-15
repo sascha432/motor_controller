@@ -9,57 +9,107 @@
 #include "pid_control.h"
 #include "motor.h"
 #include "current_limit.h"
+#include <Encoder.h>
 
+// setup pin change interrupt for given pin
 void pciSetup(byte pin)
 {
-    *digitalPinToPCMSK(pin) |= bit(digitalPinToPCMSKbit(pin));
-    PCIFR |= bit(digitalPinToPCICRbit(pin));
-    PCICR |= bit(digitalPinToPCICRbit(pin));
+    pinMode(pin, INPUT);
+    *digitalPinToPCMSK(pin) |= _BV(digitalPinToPCMSKbit(pin));
+    PCIFR |= _BV(digitalPinToPCICRbit(pin));
+    PCICR |= _BV(digitalPinToPCICRbit(pin));
 }
 
-#if HAVE_INTERRUPTS
-
-volatile uint8_t pinb_state_last;
+// we need the encoder for updating values
+extern Encoder knob;
+// last pin states are stored in this variable
+PinChangedState lastState;
+// flag for the main loop
+PinChangedType pinChangedFlag;
 
 void setup_interrupts()
 {
-    pinb_state_last = PINB;
-#if HAVE_CURRENT_LIMIT
-    pciSetup(PIN_CURRENT_LIMIT_INDICATOR);
-#elif HAVE_DEBUG_RPM_SIGNAL_OUT
-    pciSetup(PIN_RPM_SIGNAL);
-#endif
+    pinChangedFlag = PinChangedType::NONE;
+    lastState.update();
+    #if HAVE_CURRENT_LIMIT
+        pciSetup(PIN_CURRENT_LIMIT_INDICATOR_PINNO);
+    #endif
+    pciSetup(PIN_BUTTON1);
+    pciSetup(PIN_BUTTON2);
+    pciSetup(PIN_ROTARY_ENC_CLK);
+    pciSetup(PIN_ROTARY_ENC_DT);
 }
 
-
-ISR(PCINT0_vect) {
-
-#define PINB_STATE_CHANGED(mask) (pinb_change_set & mask)
-
-    // track changes for PINB
-    uint8_t pinb_change_set = PINB ^ pinb_state_last;
-    pinb_state_last = PINB;
-
-#if HAVE_CURRENT_LIMIT
-
-    if (PINB_STATE_CHANGED(PIN_CURRENT_LIMIT_INDICATOR_MASK)) {
-        current_limit.pinISR((PINB && PIN_CURRENT_LIMIT_INDICATOR_MASK));
-    }
-
+#if HAVE_GCC_OPTIMIZE_O3
+#    pragma GCC optimize("O3")
 #endif
 
-#if HAVE_DEBUG_RPM_SIGNAL_OUT
+// pin change interrupt handler
+// changesets are collected through the ISRs
 
-    if (PINB_STATE_CHANGED(PIN_RPM_SIGNAL_MASK)) { // state changed
-        if (PINB & PIN_RPM_SIGNAL_DEBUG_OUT_MASK) { // toggle PIN_RPM_SIGNAL_DEBUG_OUT
-            PORTB &= PIN_RPM_SIGNAL_DEBUG_OUT_MASK;
-        } else {
-            PORTB |= PIN_RPM_SIGNAL_DEBUG_OUT_MASK;
+void check_interrupt_level_change(PinChangedState::ChangeSetIntType change_set)
+{
+    #if HAVE_CURRENT_LIMIT
+
+        if (lastState.changed<PIN_CURRENT_LIMIT_INDICATOR_PCHS_PORT, PIN_CURRENT_LIMIT_INDICATOR_BIT>(change_set)) {
+            current_limit.pinISR(lastState.get<PIN_CURRENT_LIMIT_INDICATOR_PCHS_PORT>());
         }
+
+    #endif
+
+    auto tmpFlag = static_cast<uint8_t>(pinChangedFlag);
+
+    // buttons should have a decent amount of capacitance added to avoid bouncing and creating unnecessary interrupts
+    // to have a good noise immunity use small resistors and big capacitors
+    // rise/fall time 5-10ms
+    if (lastState.changed<PIN_BUTTON1_PORT, PIN_BUTTON1_BIT>(change_set)) {
+        tmpFlag |= PinChangedType::BUTTON1;
+    }
+    if (lastState.changed<PIN_BUTTON2_PORT, PIN_BUTTON2_BIT>(change_set)) {
+        tmpFlag |= PinChangedType::BUTTON2;
+    }
+
+    if (lastState.changed<PIN_ROTARY_ENC_CLK_PORT, PIN_ROTARY_ENC_CLK_BIT>(change_set) || lastState.changed<PIN_ROTARY_ENC_DT_PORT, PIN_ROTARY_ENC_DT_BIT>(change_set)) {
+        // the encoder pins should have some hardware debouncing in order to reduce the number of unnecessary interrupts
+        // this can be a lot depending on the quality of the encoder. the capacitance of the filter should be low enough to
+        // catch fast turns but filter noise and bouncing
+        // rise/fall time 1ms or less (just a guess, not tested)
+        //
+        // update encoder inside interrupt since its time critical to avoid skipping states
+        knob.update(static_cast<Encoder::PinStatesType>(readRotaryEncoderPinStates()));
+        tmpFlag |= PinChangedType::KNOB;
+    }
+    pinChangedFlag = static_cast<PinChangedType>(tmpFlag);
+}
+
+// pin change ISRs
+
+#if PIN_CHANGED_STATE_HAVE_PORTB
+
+    ISR(PCINT0_vect) {
+        PinChangedState::ChangeSetIntType changeSet = (PINB ^ lastState.get<PIN_CHANGED_STATE_PORTB>()) << PinChangedState::PortIntToPin<PIN_CHANGED_STATE_PORTB>::shl();
+        lastState.update<PIN_CHANGED_STATE_PORTB>();
+        check_interrupt_level_change(changeSet);
     }
 
 #endif
 
-}
+#if PIN_CHANGED_STATE_HAVE_PORTC
+
+    ISR(PCINT1_vect) {
+        PinChangedState::ChangeSetIntType changeSet = (PINC ^ lastState.get<PIN_CHANGED_STATE_PORTC>()) << PinChangedState::PortIntToPin<PIN_CHANGED_STATE_PORTC>::shl();
+        lastState.update<PIN_CHANGED_STATE_PORTC>();
+        check_interrupt_level_change(changeSet);
+    }
+
+#endif
+
+#if PIN_CHANGED_STATE_HAVE_PORTD
+
+    ISR(PCINT2_vect) {
+        PinChangedState::ChangeSetIntType changeSet = (PIND ^ lastState.get<PIN_CHANGED_STATE_PORTD>()) << PinChangedState::PortIntToPin<PIN_CHANGED_STATE_PORTD>::shl();
+        lastState.update<PIN_CHANGED_STATE_PORTD>();
+        check_interrupt_level_change(changeSet);
+    }
 
 #endif

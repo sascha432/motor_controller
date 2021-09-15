@@ -64,6 +64,9 @@ public:
     void enter();
     void exit();
 
+    int16_t getKnobValue(int16_t value, int16_t multiplier, int16_t divider = 1, int16_t min = 1) const;
+
+
 private:
     void _displayItem(uint8_t y, uint8_t index);
 
@@ -202,3 +205,16 @@ inline void Menu::_displayItem(uint8_t y, uint8_t index)
     __display().setCursor((SCREEN_WIDTH / 2) - (strlen_P(item) * (FONT_WIDTH / 2)), y);
     __display().print(FPSTR(item));
 }
+
+inline int16_t Menu::getKnobValue(int16_t value, int16_t multiplier, int16_t divider, int16_t min) const
+{
+    auto tmp = value * multiplier / divider;
+    if (min && tmp < 0 && -tmp < min) {
+        return -min;
+    }
+    if (min && tmp > 0 && tmp < min) {
+        return min;
+    }
+    return tmp;
+}
+
