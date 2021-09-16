@@ -8,6 +8,9 @@
 #include "main.h"
 #include "timer.h"
 
+#if HAVE_GCC_OPTIMIZE_O3
+#    pragma GCC optimize("O3")
+#endif
 RpmSense rpm_sense;
 
 // overflow interrupt
@@ -21,6 +24,8 @@ ISR(TIMER1_CAPT_vect)
 {
     rpm_sense._captureISR();
 }
+
+#pragma GCC optimize("Os")
 
 RpmSense::RpmSense()
 {
@@ -59,6 +64,10 @@ void RpmSense::setCallback(capture_timer_callback_t callback)
     _callback = callback;
 }
 
+#if HAVE_GCC_OPTIMIZE_O3
+#    pragma GCC optimize("O3")
+#endif
+
 void RpmSense::_captureISR()
 {
     // +++ time critical part starts here
@@ -66,16 +75,17 @@ void RpmSense::_captureISR()
     // for low RPM enable RPM_SENSE_TOGGLE_EDGE, for high rpm or when clock cycles are running out,
     // disable RPM_SENSE_TOGGLE_EDGE
     auto counter = ICR1;
+
 #if RPM_SENSE_TOGGLE_EDGE
     // toggle edge
     if (TCCR1B & _BV(ICES1)) {
         TCCR1B &= ~_BV(ICES1);
-        // _risingEdge = false;
     } else {
         TCCR1B |= _BV(ICES1);
-        // _risingEdge = true;
     }
-    TIFR1 |= _BV(ICF1);
+    // TIFR1 |= _BV(ICF1);
+    sbi(TIFR1, ICF1);
+
     // Measurement of an external signal’s duty cycle requires that the trigger edge is changed after each capture. Changing the
     // edge sensing must be done as early as possible after the ICR1 register has been read. After a change of the edge, the input
     // capture flag (ICF1) must be cleared by software (writing a logical one to the I/O bit location). For measuring frequency only,
@@ -136,3 +146,4 @@ void RpmSense::_captureISR()
         _callbackLocked = false;
     }
 }
+

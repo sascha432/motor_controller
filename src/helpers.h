@@ -118,6 +118,161 @@ namespace std {
         pointer ptr;
     };
 
+    template<typename _Type>
+    struct progmem_ptr_base {
+        progmem_ptr_base(const _Type *ptr) : _ptr(ptr) {}
+        progmem_ptr_base(_Type *ptr) : _ptr(ptr) {}
+
+        _Type operator &() const {
+            return _ptr;
+        }
+
+        progmem_ptr_base &operator++() {
+            _ptr++;
+            return *this;
+        }
+        progmem_ptr_base operator++(int) {
+            auto tmp = _ptr;
+            tmp++;
+            return tmp;
+        }
+
+        progmem_ptr_base &operator--() {
+            _ptr--;
+            return *this;
+        }
+        progmem_ptr_base operator--(int) {
+            auto tmp = _ptr;
+            tmp--;
+            return tmp;
+        }
+
+    protected:
+        const _Type *_ptr;
+    };
+
+    template<typename _Type = uint8_t>
+    struct progmem_ptr_byte : progmem_ptr_base<_Type> {
+        using base = progmem_ptr_base<_Type>;
+        using base::base;
+        using base::_ptr;
+        using base::operator++;
+        using base::operator--;
+        using base::operator&;
+
+        operator _Type() const {
+            return pgm_read_byte(_ptr);
+        }
+        _Type operator *() const {
+            return static_cast<_Type>(*this);
+        }
+    };
+
+    template<typename _Type = uint16_t>
+    struct progmem_ptr_word : progmem_ptr_base<_Type> {
+        using base = progmem_ptr_base<_Type>;
+        using base::base;
+        using base::_ptr;
+        using base::operator++;
+        using base::operator--;
+        using base::operator&;
+
+        operator _Type() const {
+            return pgm_read_word(_ptr);
+        }
+        _Type operator *() const {
+            return static_cast<_Type>(*this);
+        }
+    };
+
+    template<typename _Type = uint32_t>
+    struct progmem_ptr_dword : progmem_ptr_base<_Type> {
+        using base = progmem_ptr_base<_Type>;
+        using base::base;
+        using base::_ptr;
+        using base::operator++;
+        using base::operator--;
+        using base::operator&;
+
+        operator _Type() const {
+            return pgm_read_dword(_ptr);
+        }
+        _Type operator *() const {
+            return static_cast<_Type>(*this);
+        }
+    };
+
+    template<typename _Type = float>
+    struct progmem_ptr_float : progmem_ptr_base<_Type> {
+        using base = progmem_ptr_base<_Type>;
+        using base::base;
+        using base::_ptr;
+        using base::operator++;
+        using base::operator--;
+        using base::operator&;
+
+        operator _Type() const {
+            return pgm_read_float(_ptr);
+        }
+        _Type operator *() const {
+            return static_cast<_Type>(*this);
+        }
+    };
+
+    template<typename _Type = void *>
+    struct progmem_ptr_pointer : progmem_ptr_base<_Type> {
+        using base = progmem_ptr_base<_Type>;
+        using base::base;
+        using base::_ptr;
+        using base::operator++;
+        using base::operator--;
+        using base::operator&;
+
+        operator _Type() const {
+            return pgm_read_ptr(_ptr);
+        }
+        _Type operator *() const {
+            return static_cast<_Type>(*this);
+        }
+    };
+
+    template<typename _Type, typename _ProgmemPtrType, const size_t _Size>
+    struct progmem_array {
+        using type = _ProgmemPtrType;
+
+        progmem_array(const _Type *begin) : _begin(begin) {}
+
+        constexpr size_t size() const {
+            return _Size;
+        }
+
+        constexpr type data() const {
+            return begin();
+        }
+
+        constexpr type begin() const {
+            return _begin;
+        }
+
+        constexpr type end() const {
+            return _begin + size();
+        }
+
+        constexpr type at(size_t n) const {
+            if (n < size()) {
+                return _begin + n;
+            }
+            return nullptr;
+        }
+
+        constexpr type operator[](size_t n) const {
+            return _begin + n;
+        }
+
+    private:
+        const _Type *_begin;
+    };
+
 }
 
 #pragma GCC optimize("Os")

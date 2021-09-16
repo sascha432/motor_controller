@@ -5,6 +5,13 @@
  - Using size optimized version of Adafruit SSD1306 to free 4.2KB flash memory
  - Using rising and falling edge for RPM detection to work more precisely
  - Reduced clock cycles required for the capture ISR
+ - Added inline assembler for time critical parts
+ - Motor setting RPM/Volt for minimum duty cycle and pid controller
+ - Command to test no load RPM/Volt
+ - Reset defaults menu
+ - Changed voltage detection analog reference to 1.1V
+ - Reading buttons and rotary encoder via pin change interrupt
+ - Display LED power
 
 ## 1.0.3
 

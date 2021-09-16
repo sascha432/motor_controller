@@ -34,10 +34,10 @@
 #define RPM_SENSE_TICKS_TO_HZ(value) ((1000000UL / RPM_SENSE_PULSES_PER_TURN * TIMER1_TICKS_PER_US) / value)
 
 // convert pulse length in µs to kHz
-#define RPM_SENSE_US_TO_KHZ(value) (1e3 / (float)value)
+#define RPM_SENSE_US_TO_KHZ(value) (1e3 / static_cast<float>(value))
 
 // if RPM falls below this value, RPM sensing will detect a halt
-#define RPM_SENSE_RPM_MIN max(1, (RPM_MIN / 100))
+#define RPM_SENSE_RPM_MIN std::max(10, (RPM_MIN / 10))
 
 #define RPM_SENSE_RPM_MIN_TICKS (RPM_SENSE_RPM_TO_US(RPM_SENSE_RPM_MIN) * TIMER1_TICKS_PER_US)
 
@@ -101,40 +101,32 @@ inline void RpmSense::_overflowISR()
 
 inline uint32_t RpmSense::getLastSignalMillis()
 {
-    uint32_t tmp;
-    ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
-    {
-        tmp = _lastSignalMillis;
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+        return _lastSignalMillis;
     }
-    return tmp;
+    __builtin_unreachable();
 }
 
 inline uint24_t RpmSense::getTimerIntegralTicks()
 {
-    uint24_t tmp;
-    ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
-    {
-        tmp = _ticksIntegral;
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+        return _ticksIntegral;
     }
-    return tmp;
+    __builtin_unreachable();
 }
 
 inline float RpmSense::getTimerIntegralTicksFloat()
 {
-    float tmp;
-    ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
-    {
-        tmp = _ticksIntegral;
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+        return _ticksIntegral;
     }
-    return tmp;
+    __builtin_unreachable();
 }
 
 inline uint24_t RpmSense::getTimerIntegralMicros()
 {
-    uint24_t tmp;
-    ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
-    {
-        tmp = _ticksIntegral / TIMER1_TICKS_PER_US;
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+        return _ticksIntegral / TIMER1_TICKS_PER_US;
     }
-    return tmp;
+    __builtin_unreachable();
 }

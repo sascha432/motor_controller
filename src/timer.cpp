@@ -3,8 +3,10 @@
  */
 
 #include "timer.h"
+#include "helpers.h"
 
-uint32_t get_time_diff(uint32_t start, uint32_t end) {
+uint32_t get_time_diff(uint32_t start, uint32_t end)
+{
     if (end >= start) {
         return end - start;
     }
@@ -12,10 +14,12 @@ uint32_t get_time_diff(uint32_t start, uint32_t end) {
     return end + ~start + 1;
 }
 
-MicrosTimer::MicrosTimer() : _valid(false) {
+MicrosTimer::MicrosTimer() : _valid(false)
+{
 }
 
-MicrosTimer::timer_t MicrosTimer::getTime(timer_t time) {
+MicrosTimer::timer_t MicrosTimer::getTime(timer_t time)
+{
     if (!_valid) {
         return 0;
     }
@@ -32,57 +36,67 @@ MicrosTimer::timer_t MicrosTimer::getTime(timer_t time) {
     return time;
 }
 
-void MicrosTimer::start(timer_t time) {
+void MicrosTimer::start(timer_t time)
+{
     _start = time;
     _valid = true;
 }
 
 
-MicrosTimerMinMaxMean::MicrosTimerMinMaxMean() : MicrosTimer() {
+MicrosTimerMinMaxMean::MicrosTimerMinMaxMean() : MicrosTimer()
+{
     clear();
 }
 
-void MicrosTimerMinMaxMean::integrateTime(int multiplier) {
+void MicrosTimerMinMaxMean::integrateTime(int multiplier)
+{
     auto time = getTime();
     if (time) {
         integrateTime(time, multiplier);
     }
 }
 
-void MicrosTimerMinMaxMean::integrateTime(timer_t time, int multiplier) {
-    _min = min(_min, time);
-    _max = max(_max, time);
+void MicrosTimerMinMaxMean::integrateTime(timer_t time, int multiplier)
+{
+    _min = std::min(_min, time);
+    _max = std::max(_max, time);
     _mean = ((_mean * multiplier) + (time << 8)) / (multiplier + 1);
 }
 
-void MicrosTimerMinMaxMean::addTime(timer_t time) {
+void MicrosTimerMinMaxMean::addTime(timer_t time)
+{
     integrateTime(time, _count);
     _count++;
 }
 
-void MicrosTimerMinMaxMean::addTime() {
+void MicrosTimerMinMaxMean::addTime()
+{
     auto time = getTime();
     if (time) {
         addTime(time);
     }
 }
 
-void MicrosTimerMinMaxMean::clear() {
+void MicrosTimerMinMaxMean::clear()
+{
     clearMinMax();
     _mean = 0;
     _count = 0;
 }
 
 void MicrosTimerMinMaxMean::clearMinMax() {
+
     _min = ~0UL;
     _max = 0;
 }
 
-void MicrosTimerMinMaxMean::printMeanTo(Print &print) {
+void MicrosTimerMinMaxMean::printMeanTo(Print &print)
+{
     print.print(getMean());
 }
 
-void MicrosTimerMinMaxMean::printMinMeanMaxTo(Print &print) {
+void MicrosTimerMinMaxMean::printMinMeanMaxTo(Print &print)
+{
     if (_min == ~0UL) {
         print.print("NA");
 

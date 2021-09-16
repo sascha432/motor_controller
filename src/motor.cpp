@@ -37,7 +37,7 @@ void Motor::loop()
         if (motor.isOn()) {
             stop(MotorStateEnum::STALLED);
         }
-        else if (digitalRead(PIN_BRAKE)) { // release brake
+        else if (isBrakeOn()) { // release brake
             setBrake(false);
             if (menu.isClosed()) {
                 ui_data.refreshDisplay();
@@ -48,14 +48,14 @@ void Motor::loop()
 
 void Motor::start()
 {
-    if (digitalRead(PIN_BRAKE)) {
+    if (isBrakeOn()) {
         // if the brake is still engaged, for example turning the motor off and on quickly, turn it off, update the display and wait 100ms
         setBrake(false);
         ui_data.refreshDisplay();
         delay(100);
 
         // make sure it is off
-        if (digitalRead(PIN_BRAKE)) {
+        if (isBrakeOn()) {
             stop(MotorStateEnum::ERROR);
             return;
         }
@@ -108,6 +108,9 @@ void Motor::stop(MotorStateEnum state)
     current_limit.enable(true);
 }
 
+#if HAVE_GCC_OPTIMIZE_O3
+#    pragma GCC optimize("O3")
+#endif
 // set PWM duty cycle with enabling/disabling the brake and turning the motor signal led on/off
 // called inside ISR
 void Motor::setSpeed(uint8_t speed)
@@ -123,19 +126,20 @@ void Motor::setSpeed(uint8_t speed)
         _dutyCycle = speed;
     }
     if (speed != 0) {
-        if (digitalRead(PIN_BRAKE)) {
+        if (isBrakeOn()) {
             stop(MotorStateEnum::ERROR);
             return;
         }
         speed = current_limit.getDutyCycle(speed);
+        setMotorPWMAtomic(speed);
     }
-    analogWrite(PIN_MOTOR_PWM, speed);
-    if (speed == 0) {
+    else if (speed == 0) {
         ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
             if (isOn()) {
                 _state = MotorStateEnum::OFF;
             }
         }
+        // turns motor off as well
         setBrake(true);
     }
 }
@@ -143,9 +147,9 @@ void Motor::setSpeed(uint8_t speed)
 void Motor::updateMotorSpeed()
 {
     if (isDutyCycleMode()) {
-#if RPM_SENSE_AVERAGING_FACTOR
-        data.rpm_sense_average = 0;
-#endif
+        #if RPM_SENSE_AVERAGING_FACTOR
+            data.rpm_sense_average = 0;
+        #endif
         pid.duty_cycle = data.getSetPointDutyCycle();
         if (isOn()) {
             setSpeed(pid.duty_cycle);
@@ -156,6 +160,7 @@ void Motor::updateMotorSpeed()
     }
 }
 
+#pragma GCC optimize("Os")
 
 void Motor::setMode(ControlModeEnum mode)
 {
@@ -170,19 +175,22 @@ void Motor::setMode(ControlModeEnum mode)
     }
 }
 
+#if HAVE_GCC_OPTIMIZE_O3
+#    pragma GCC optimize("O3")
+#endif
 void Motor::_calcPulseLength()
 {
     auto rpm = data.getSetPointRPM();
     pid.set_point_rpm_pulse_length = RPM_SENSE_RPM_TO_US(rpm);
-#if RPM_SENSE_AVERAGING_FACTOR
-    data.rpm_sense_average = (rpm * (rpm / RPM_SENSE_AVERAGING_FACTOR)) / 30000;
-    // Serial.print("rpm_sense_average ");
-    // Serial.println(data.rpm_sense_average);
-#endif
-#if 0
-    Serial.print(rpm);
-    Serial.print(' ');
-    Serial.println(pid.set_point_rpm_pulse_length);
-#endif
+    #if RPM_SENSE_AVERAGING_FACTOR
+        data.rpm_sense_average = (rpm * (rpm / RPM_SENSE_AVERAGING_FACTOR)) / 30000;
+        // Serial.print("rpm_sense_average ");
+        // Serial.println(data.rpm_sense_average);
+    #endif
+    #if 0
+        Serial.print(rpm);
+        Serial.print(' ');
+        Serial.println(pid.set_point_rpm_pulse_length);
+    #endif
 }
 

@@ -79,10 +79,22 @@ inline Motor::Motor() :
 
 inline void Motor::begin()
 {
-    digitalWrite(PIN_BRAKE, LOW);
-    digitalWrite(PIN_MOTOR_PWM, LOW);
-    pinMode(PIN_BRAKE, OUTPUT);
-    pinMode(PIN_MOTOR_PWM, OUTPUT);
+    setupMotorPwm();
+    setupBrake();
+    // bool t=false;
+    // while(true) {
+    //     if (t) {
+    //         setBrakeOn();
+    //     }
+    //     else {
+    //         setBrakeOff();
+    //     }
+    //     Serial.print(t);
+    //     Serial.print(' ');
+    //     Serial.println(isBrakeOn());
+    //     delay(5000);
+    //     t=!t;
+    // }
 }
 
 inline Motor::operator bool() const
@@ -142,12 +154,12 @@ inline uint16_t Motor::getMaxStallTime() const
 
 inline void Motor::setMaxDutyCycle(uint8_t maxPWM)
 {
-    _maxPWM = max(MIN_DUTY_CYCLE, min(MAX_DUTY_CYCLE, maxPWM));
+    _maxPWM = maxPWM;
 }
 
 inline void Motor::setMaxStallTime(uint16_t maxStallTime)
 {
-    _maxStallTime = max(STALL_TIME_MIN, min(STALL_TIME_MAX, maxStallTime));
+    _maxStallTime = maxStallTime;
 }
 
 inline bool Motor::isBrakeEnabled() const
@@ -168,25 +180,25 @@ inline void Motor::setBrake(bool state)
             #if DEBUG_MOTOR_SPEED
                 Serial.println("set brake high");
             #endif
-            digitalWrite(PIN_MOTOR_PWM, LOW);
+            stopMotorAtomic();
             // wait for the mosfet to be turned off
             delayMicroseconds(500);
             // short motor
-            digitalWrite(PIN_BRAKE, HIGH);
+            setBrakeOn();
         }
         else {
             #if DEBUG_MOTOR_SPEED
                 Serial.println("set brake high skipped");
             #endif
-            digitalWrite(PIN_MOTOR_PWM, LOW);
-            digitalWrite(PIN_BRAKE, LOW);
+            stopMotorAtomic();
+            setBrakeOff();
         }
     }
     else {
         #if DEBUG_MOTOR_SPEED
             Serial.println("set brake low");
         #endif
-        digitalWrite(PIN_BRAKE, LOW);
+        setBrakeOff();
         delayMicroseconds(50);
     }
 }

@@ -38,7 +38,7 @@ void PidController::updatePidValue(PidConfigEnum pid, int16_t steps)
         default:
             return;
     }
-    Serial_printf("pid %u: s:%d: ", (int)pid, steps);
+    Serial.printf_P(PSTR("pid %u: s:%d: "), (int)pid, steps);
     Serial.print(value);
     Serial.print('>');
     *output += value * steps;
@@ -73,14 +73,17 @@ void PidController::reset()
     last_update.start();
 }
 
+#if HAVE_GCC_OPTIMIZE_O3
+#    pragma GCC optimize("O3")
+#endif
 // called inside ISR
 void PidController::update()
 {
     auto _micros = micros();
     float delta_t = last_update.getTime(_micros) * dtMultiplier;
-#if DEBUG_PID_CONTROLLER
-    uint16_t delta_t_short = last_update.getTime(_micros);
-#endif
+    #if DEBUG_PID_CONTROLLER
+        uint16_t delta_t_short = last_update.getTime(_micros);
+    #endif
     last_update.start(_micros);
 
     auto measured_pulse_length = rpm_sense.getTimerIntegralMicros();
@@ -89,25 +92,25 @@ void PidController::update()
 
     if (motor.isOn()) {
         int32_t error = measured_pulse_length - set_point_rpm_pulse_length; // values are inverted
-#if DEBUG && 0
-        if (abs(error) > 1000000) {
-            Serial_printf_P(PSTR("ERR %lu, %lu, %u\n"), error, measured_pulse_length, set_point_rpm_pulse_length);
-            motor.stop(MotorStateEnum::ERROR);
-        }
-#endif
+        #if DEBUG && 0
+            if (abs(error) > 1000000) {
+                Serial.printf_P(PSTR("ERR %lu, %lu, %u\n"), error, measured_pulse_length, set_point_rpm_pulse_length);
+                motor.stop(MotorStateEnum::ERROR);
+            }
+        #endif
 
         integral = integral + error * delta_t;
         float derivative = (error - previous_error) / delta_t;
 
         int32_t output = (Kp * error + Ki * integral + Kd * derivative) * outputMultiplier;
-#if DEBUG && 0
-        if (abs(output) > 10000) {
-            Serial_printf_P(PSTR("OVF %ld\n"), output);
-        }
-#endif
+        #if DEBUG && 0
+            if (abs(output) > 10000) {
+                Serial.printf_P(PSTR("OVF %ld\n"), output);
+            }
+        #endif
         previous_error = error;
 
-        duty_cycle = max(MIN_DUTY_CYCLE, min(output, MAX_DUTY_CYCLE));
+        duty_cycle = std::clamp<int32_t>(output, MIN_DUTY_CYCLE, MAX_DUTY_CYCLE);
         motor.setSpeed(duty_cycle);
 
         // ui_data.display_duty_cycle_integral = (ui_data.display_duty_cycle_integral * DISPLAY_DUTY_CYCLE_MULTIPLIER + duty_cycle) / (DISPLAY_DUTY_CYCLE_MULTIPLIER + 1);
