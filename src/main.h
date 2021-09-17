@@ -11,9 +11,10 @@
 #include <ButtonEventCallback.h>
 #include <PushButton.h>
 #include <Bounce2.h>
+#include <Encoder.h>
 #include <Adafruit_SSD1306.h>
-#include "progmem_strings.h"
 #include "helpers.h"
+#include "progmem_strings.h"
 #include "int24_types.h"
 
 #define VERSION_MAJOR                           1
@@ -257,14 +258,14 @@ inline uint8_t readRotaryEncoderPinStates()
         "rjmp %l[PIN1_LOW]\n\t"
         :: "I" (_SFR_IO_ADDR(PIN_ROTARY_ENC_CLK_PIN)), "I" (PIN_ROTARY_ENC_CLK_BIT) :: PIN1_LOW
     );
-    ret = 4;
+    ret = static_cast<uint8_t>(Encoder::PinStatesType::P1_HIGH);
 PIN1_LOW:
     asm volatile goto (
         "sbis %0, %1\n\t"
         "rjmp %l[PIN2_LOW]\n\t"
         :: "I" (_SFR_IO_ADDR(PIN_ROTARY_ENC_DT_PIN)), "I" (PIN_ROTARY_ENC_DT_BIT) :: PIN2_LOW
     );
-    ret |= 8;
+    ret |= static_cast<uint8_t>(Encoder::PinStatesType::P2_HIGH);
 PIN2_LOW:
     return ret;
 }
@@ -494,18 +495,18 @@ inline void setCurrentLimitLedOn()
 #if HAVE_LED_POWER
 
 // pwm  led power mW
-// 1      -50
-// 3       5
-// 35      150
-// 50 650
-// 95 1000
-// 111 1200
-// 127 1650
-// 165 2300
-// 200 3100
-// 238 4785
-// 252 5985
-// 254.5 6350
+// 1        -50
+// 3        5
+// 35       150
+// 50       650
+// 95       1000
+// 111      1200
+// 127      1650
+// 165      2300
+// 200      3100
+// 238      4785
+// 252      5985
+// 254.5    6350
 
 
 // pass the PWM value as x and get mW
@@ -528,6 +529,9 @@ inline float led_power_polynomial_regress(float x)
         r += term * t;
         t *= x;
     }
+    if (r < 0) {
+        return 0;
+    }
     return r;
 }
 
@@ -536,27 +540,37 @@ inline float led_power_polynomial_regress(float x)
 // UI
 
 // multiplier for menu speed
-#define MENU_SPEED_LED                          3
-#define MENU_SPEED_PWM                          1
-#define MENU_SPEED_STALL                        5
-#define MENU_SPEED_RPM                          10
-#define MENU_SPEED_CURRENT_LIMIT                5
-#define MENU_SPEED_SETPOINT                     5
+// < 256 is a multiplier (1 is the biggest multiplier of 256 times)
+// > 256 is a divider (32768 is the biggest divider of 128 times)
+// negative values will invert the direction
+//
+// (value * 256) / speed = adjusted value
+// (10 * 256) / -512 = -5 - this is basiclly a by 2 divider that also inverts the direction
+//
+#define MENU_SPEED_MAIN                         ((256L << 8) / KNOB_MENU_SPEED)
+#define MENU_SPEED_LED                          ((256L << 8) / KNOB_MENU_SPEED)
+#define MENU_SPEED_PWM                          ((256L << 8) / KNOB_MENU_SPEED)
+#define MENU_SPEED_STALL                        ((256L << 8) / KNOB_MENU_SPEED)
+#define MENU_SPEED_RPM                          ((256L << 8) / KNOB_MENU_SPEED)
+#define MENU_SPEED_CURRENT_LIMIT                ((256L << 8) / KNOB_MENU_SPEED)
+#define MENU_SPEED_SETPOINT                     ((256L << 8) / KNOB_MENU_SPEED)
 
-// set acceleration from 0-255, 128 is default
+// set acceleration from 0-255, 128 is default (50% of the acceleration is applied)
 #define KNOB_ACCELERATION                       128
-// -1 to invert direction in general
+
+// -1 is inverted direction in general
+// 1 is non-inverted
 #define KNOB_INVERTED                           1
 // negative to invert the menu only
-#define KNOB_MENU_DIVIDER                       (-256)
+#define KNOB_MENU_SPEED                         (256L * KNOB_INVERTED)
 // negative to invert toggling values only
-#define KNOB_TOGGLE_DIVIDER                     (2048)
+#define KNOB_TOGGLE_SPEDD                       (256L * KNOB_INVERTED)
 // negative to invert changing values
-#define KNOB_VALUE_DIVIDER                      (64)
+#define KNOB_VALUE_SPEED                        (256L * KNOB_INVERTED)
 
-#define MENU_GET_MENU_VALUE(value, mul)         menu.getKnobValue(value, mul, KNOB_MENU_DIVIDER, 1)
-#define MENU_GET_TOGGLE_VALUE(value, mul)       menu.getKnobValue(value, mul, KNOB_TOGGLE_DIVIDER, 1)
-#define MENU_GET_VALUE(value, multiplier)       menu.getKnobValue(value, multiplier, KNOB_VALUE_DIVIDER, 1)
+#define KNOB_GET_VALUE(value, speed)            menu.getKnobValue(value, speed, 1)
+
+#define MENU_LONG_PRESS_MILLIS                  450
 
 // poti
 #define POTI_MIN                                0

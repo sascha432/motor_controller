@@ -67,7 +67,7 @@ void Data_t::setSetPoint(uint8_t value)
 void Data_t::changeSetPoint(int8_t value)
 {
     uint8_t &set_point_input = motor.isVelocityMode() ? set_point_input_velocity : set_point_input_pwm;
-    set_point_input = std::clamp<int16_t>(set_point_input + MENU_GET_VALUE(value, MENU_SPEED_SETPOINT), POTI_MIN, POTI_MAX);
+    set_point_input = std::clamp<int16_t>(set_point_input + KNOB_GET_VALUE(value, MENU_SPEED_SETPOINT), POTI_MIN, POTI_MAX);
 }
 
 void Data_t::setLedBrightness()

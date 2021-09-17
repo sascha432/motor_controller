@@ -12,6 +12,8 @@
  - Changed voltage detection analog reference to 1.1V
  - Reading buttons and rotary encoder via pin change interrupt
  - Display LED power
+ - Implemented acceleration into the rotary encoder library
+ - New rotary encoder algorithm with debouncing
 
 ## 1.0.3
 

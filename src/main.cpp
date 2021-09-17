@@ -225,6 +225,7 @@ void refresh_display()
             else {
                 menu.close();
                 write_eeprom();
+                Serial.println("exit menu in refresh display");
             }
             return;
         }
@@ -449,12 +450,14 @@ void menu_display_value()
         #if HAVE_VOLTAGE_DETECTION
             display.print(F("Input "));
             display.print(getVoltage() / 1000.0, 2);
-            display.println('V');
         #endif
 
         #if HAVE_CURRENT_DETECTION && HAVE_VOLTAGE_DETECTION
+            display.print(F("V "));
             display.print(getCurrent() / 1000.0, 3);
             display.println('A');
+        #else
+            display.println('V');
         #endif
 
         ui_data.refresh_timer = millis() + 500;
@@ -547,43 +550,57 @@ bool update_motor_settings(int16_t value)
 void knob_released(Button& btn, uint16_t duration)
 {
     if (motor.isOn()) {
+        // motor running
         if (motor.isVelocityMode()) {
             data.pid_config = static_cast<PidConfigEnum>((static_cast<uint8_t>(data.pid_config) + 1) % static_cast<uint8_t>(PidConfigEnum::MAX));
             ui_data.refreshDisplay();
         }
     }
     else if (menu.isOpen()) {
-        if (duration > 250 || menu.getPosition() == MenuEnum::MENU_EXIT) {
-            knob.write(0);
+        // inside menu
+        if (duration > MENU_LONG_PRESS_MILLIS || menu.getPosition() == MenuEnum::MENU_EXIT) {
+            // exit menu on long press or exit menu item
             ui_data.refreshDisplay();
-            delay(250);
         }
-        else if (!menu.isMainMenuActive() && menu.getPosition() == MenuEnum::MENU_EXIT) {
-            menu.close();
-            data = {};
-            pid.resetPidValues();
-            write_eeprom(FPSTR(PSTR("RESTORED")));
-            read_eeprom();
+        else if (menu.isMainMenuActive()) {
+            // inside main menu
+            switch(menu.getPosition()) {
+                case MenuEnum::MENU_EXIT:
+                    ui_data.refreshDisplay();
+                    break;
+                case MenuEnum::MENU_RESTORE: {
+                        menu.close();
+                        data = {};
+                        pid.resetPidValues();
+                        write_eeprom(F("RESTORED"));
+                        read_eeprom();
+                    }
+                    break;
+                case MenuEnum::MENU_INFO:
+                    menu.enter();
+                    menu_display_value();
+                    break;
+                default:
+                    // enter sub menu
+                    menu.enter();
+                    ui_data.menuResetAutoCloseTimer();
+                    break;
+            }
         }
         else if (menu.isActive()) {
+            // inside sub menu, exit...
             menu.exit();
-            knob.write(menu.getPositionInt() * KNOB_MENU_DIVIDER);
             ui_data.menuResetAutoCloseTimer();
-            delay(250);
-        }
-        else {
-            menu.enter();
-            knob.write(0);
-            menu_display_value();
-            delay(250);
         }
     }
     else {
+        // main screen
         menu.open();
-        knob.write(menu.getPositionInt() * KNOB_MENU_DIVIDER);
         ui_data.menuResetAutoCloseTimer();
-        delay(250);
     }
+    // reset encoder after a short delay
+    delay(250);
+    knob.write(0);
 }
 
 void start_stop_button_pressed(Button& btn)
@@ -602,17 +619,18 @@ void start_stop_button_pressed(Button& btn)
 
 void read_knob()
 {
+    int16_t value = knob.readAndReset();
     if (menu.isMainMenuActive()) {
-
-        if (menu.setPosition(MENU_GET_MENU_VALUE(knob.read(), 1))) {
+        // main menu
+        if (value && menu.setPosition(menu.getPositionInt() + KNOB_GET_VALUE(value, MENU_SPEED_MAIN))) {
             ui_data.menuResetAutoCloseTimer();
         }
     }
     else {
-        int16_t value = knob.readAndReset();
         int16_t new_value;
         if (value != 0) {
             if (menu.isActive()) {
+                // sub menus
                 switch(menu.getPosition()) {
                     case MenuEnum::MENU_SPEED:
                         if (!update_motor_settings(value)) {
@@ -620,13 +638,13 @@ void read_knob()
                         }
                         break;
                     case MenuEnum::MENU_LED:
-                        new_value = data.led_brightness + MENU_GET_VALUE(value, MENU_SPEED_LED);
+                        new_value = data.led_brightness + KNOB_GET_VALUE(value, MENU_SPEED_LED);
                         data.led_brightness = std::clamp<int16_t>(new_value, 0, LED_MAX_PWM);
                         data.setLedBrightnessNoDelay();
                         break;
                     #if HAVE_CURRENT_LIMIT
                         case MenuEnum::MENU_CURRENT:
-                            new_value = current_limit.getLimit() + MENU_GET_VALUE(value, MENU_SPEED_CURRENT_LIMIT);
+                            new_value = current_limit.getLimit() + KNOB_GET_VALUE(value, MENU_SPEED_CURRENT_LIMIT);
                             if (new_value >= CURRENT_LIMIT_MAX && value > 0) {
                                 current_limit.setLimit(CURRENT_LIMIT_DISABLED);
                             }
@@ -637,13 +655,13 @@ void read_knob()
                             break;
                     #endif
                     case MenuEnum::MENU_PWM:
-                        motor.setMaxDutyCycle(std::clamp<int16_t>(motor.getMaxDutyCycle() + MENU_GET_VALUE(value, MENU_SPEED_PWM), MIN_DUTY_CYCLE, MAX_DUTY_CYCLE));
+                        motor.setMaxDutyCycle(std::clamp<int16_t>(motor.getMaxDutyCycle() + KNOB_GET_VALUE(value, MENU_SPEED_PWM), MIN_DUTY_CYCLE, MAX_DUTY_CYCLE));
                         break;
                     case MenuEnum::MENU_STALL:
-                        motor.setMaxStallTime(std::clamp<int16_t>(motor.getMaxStallTime() + MENU_GET_VALUE(value, MENU_SPEED_STALL), STALL_TIME_MIN, STALL_TIME_MAX));
+                        motor.setMaxStallTime(std::clamp<int16_t>(motor.getMaxStallTime() + KNOB_GET_VALUE(value, MENU_SPEED_STALL), STALL_TIME_MIN, STALL_TIME_MAX));
                         break;
                     case MenuEnum::MENU_MOTOR:
-                        data.setRpmPerVolt(std::clamp<int16_t>(data.getRpmPerVolt() + MENU_GET_VALUE(value, MENU_SPEED_RPM), 0, 32500));
+                        data.setRpmPerVolt(std::clamp<int16_t>(data.getRpmPerVolt() + KNOB_GET_VALUE(value, MENU_SPEED_RPM), 0, 32500));
                         break;
                     case MenuEnum::MENU_MODE:
                         motor.toggleMode();
@@ -668,6 +686,7 @@ void read_knob()
                 }
             }
             else {
+                // main screen
                 if (update_motor_settings(value)) {
                     ui_data.refreshDisplay();
                 }
@@ -703,20 +722,6 @@ void setup()
     setup_display();
 
     menu.add(menuItemsString);
-
-    // menu.add(MenuEnum::MENU_SPEED, PSTR("Speed"));
-    // menu.add(MenuEnum::MENU_MODE, PSTR("Mode"));
-    // menu.add(MenuEnum::MENU_LED, PSTR("LED Brightness"));
-    // #if HAVE_CURRENT_LIMIT
-    //     menu.add(MenuEnum::MENU_CURRENT, PSTR("Current Limit"));
-    // #endif
-    // menu.add(MenuEnum::MENU_PWM, PSTR("Max PWM"));
-    // menu.add(MenuEnum::MENU_STALL, PSTR("Stall Time"));
-    // menu.add(MenuEnum::MENU_BRAKE, PSTR("Brake"));
-    // menu.add(MenuEnum::MENU_MOTOR, PSTR("Motor RPM/Volt"));
-    // menu.add(MenuEnum::MENU_INFO, PSTR("Info"));
-    // menu.add(MenuEnum::MENU_RESTORE, PSTR("Restore Defaults"));
-    // menu.add(MenuEnum::MENU_EXIT, PSTR("Exit & Save"));
 
     ATOMIC_BLOCK(ATOMIC_FORCEON) {
         TCCR1A = 0;
@@ -783,8 +788,6 @@ void process_ui_interrupts()
         button2.update();
     }
     if (tmpFlag & PinChangedType::KNOB) {
-        // Serial.printf_P(PSTR("3 %u\n"), readRotaryEncoderPinStates());
-        knob.encoder.dump(Serial);
         read_knob();
     }
 }
@@ -1000,8 +1003,8 @@ void loop() {
     }
 #endif
 
-    // EVERY_N_SECONDS(1) {
-    //     knob.encoder.dump(Serial);
+    // EVERY_N_MILLISECONDS(100) {
+    //     knob.encoder.dumpHistory(Serial);
     // }
 
     #if CURRENT_LIMIT_LED_IDLE_INDICATOR

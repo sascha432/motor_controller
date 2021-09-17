@@ -64,8 +64,12 @@ public:
     void enter();
     void exit();
 
-    int16_t getKnobValue(int16_t value, int16_t multiplier, int16_t divider = 1, int16_t min = 1) const;
-
+    // value will be adjusted according to the speed
+    // speed < 256 = speed is a multiplier
+    // speed > 256 = speed is a divider (max 32767)
+    // negative values invert the direction
+    // min >= 0 is the minimum value to return
+    int16_t getKnobValue(int16_t value, int16_t speed, int16_t min = 1) const;
 
 private:
     void _displayItem(uint8_t y, uint8_t index);
@@ -78,13 +82,20 @@ private:
     // }
 
 private:
+    enum class MenuState : uint8_t {
+        CLOSED,
+        MAIN,
+        SUB_MENU,
+    };
+
     // Adafruit_SSD1306 &_display;
     PGM_P _items[kMenuSize];
     uint8_t _position;
-    uint8_t _state;
+    MenuState _state;
+
 };
 
-inline Menu::Menu() : _position(0), _state(0)
+inline Menu::Menu() : _position(0), _state(MenuState::CLOSED)
 // inline Menu::Menu(Adafruit_SSD1306 &display) : _display(display), _position(0), _state(0)
 {
 }
@@ -95,7 +106,6 @@ inline void Menu::add(PGM_P items)
     auto startPtr = items;
     while(pgm_read_byte(startPtr)) {
         *ptr++ = startPtr;
-        // Serial.println(FPSTR(startPtr));
         while(pgm_read_byte(startPtr)) {
             startPtr++;
         }
@@ -136,7 +146,7 @@ inline void Menu::add(uint8_t index, PGM_P name)
 
 inline bool Menu::isOpen() const
 {
-    return _state != 0;
+    return _state != MenuState::CLOSED;
 }
 
 inline bool Menu::isClosed() const
@@ -146,22 +156,22 @@ inline bool Menu::isClosed() const
 
 inline bool Menu::isActive() const
 {
-    return _state == 2;
+    return _state == MenuState::SUB_MENU;
 }
 
 inline bool Menu::isMainMenuActive() const
 {
-    return _state == 1;
+    return _state == MenuState::MAIN;
 }
 
 inline void Menu::close()
 {
-    _state = 0;
+    _state = MenuState::CLOSED;
 }
 
 inline void Menu::open()
 {
-    _state = 1;
+    _state = MenuState::MAIN;
     display();
 }
 
@@ -190,12 +200,12 @@ inline bool Menu::setPosition(uint8_t position)
 
 inline void Menu::enter()
 {
-    _state = 2;
+    _state = MenuState::SUB_MENU;
 }
 
 inline void Menu::exit()
 {
-    _state = 1;
+    _state = MenuState::MAIN;
     display();
 }
 
@@ -206,15 +216,25 @@ inline void Menu::_displayItem(uint8_t y, uint8_t index)
     __display().print(FPSTR(item));
 }
 
-inline int16_t Menu::getKnobValue(int16_t value, int16_t multiplier, int16_t divider, int16_t min) const
+inline int16_t Menu::getKnobValue(int16_t value, int16_t speed, int16_t min) const
 {
-    auto tmp = value * multiplier / divider;
-    if (min && tmp < 0 && -tmp < min) {
-        return -min;
+    int16_t retval = (value << 8) / speed;
+    // do we have a minimum return value?
+    if (min > 0) {
+        if (retval < 0) {
+            // negative value, invert min and check if the return value is greater
+            min = -min;
+            if (retval >= min)  {
+                return min;
+            }
+        }
+        else {
+            // positive value, check if it is smaller than min
+            if (retval <= min) {
+                return min;
+            }
+        }
     }
-    if (min && tmp > 0 && tmp < min) {
-        return min;
-    }
-    return tmp;
+    return retval;
 }
 
