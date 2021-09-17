@@ -6,7 +6,9 @@
 
 #include <Arduino.h>
 
+#ifndef FPSTR
 #define FPSTR(str)                              reinterpret_cast<const __FlashStringHelper *>(str)
+#endif
 
 #define _DECL_T(name, value)                    extern const char _text_##name[] PROGMEM;
 #define _DEF_T(name, value)                     const char _text_##name[] PROGMEM = { value }
