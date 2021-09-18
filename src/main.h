@@ -487,6 +487,10 @@ inline void setCurrentLimitLedOn()
 #define LED_MAX_PWM                             240     // more than 240 does not increase brightness much
 #define LED_FADE_TIME                           10
 
+#if LED_MIN_PWM < 5
+#error increase min. pwm
+#endif
+
 // display power consumption of the LEDs
 #ifndef HAVE_LED_POWER
 #define HAVE_LED_POWER 1
@@ -507,13 +511,14 @@ inline void setCurrentLimitLedOn()
 // 238      4785
 // 252      5985
 // 254.5    6350
+// website to create polynominal regression functions from a few samples
+// https://arachnoid.com/polysolve/index.html
 
 
 // pass the PWM value as x and get mW
-// https://arachnoid.com/polysolve/index.html
-#define LED_POWER_mW(x)                         static_cast<uint16_t>((x < LED_MIN_PWM) ? 0 : led_power_polynomial_regress(std::min<int>(255, x)))
+#define LED_POWER_mW(pwm)                       static_cast<uint16_t>((pwm < LED_MIN_PWM) ? 0 : led_power_polynomial_regress(std::min<int>(255, pwm)))
 
-inline float led_power_polynomial_regress(float x)
+inline float led_power_polynomial_regress(uint8_t pwm)
 {
     static constexpr float pgm_terms[] PROGMEM = {
         -7.0283732122754344e+001,
@@ -527,7 +532,7 @@ inline float led_power_polynomial_regress(float x)
     float r = 0;
     for(const auto &term: std::progmem_array<float, std::progmem_ptr_float<float>, sizeof(pgm_terms) / sizeof(*pgm_terms)>(pgm_terms)) {
         r += term * t;
-        t *= x;
+        t *= pwm;
     }
     if (r < 0) {
         return 0;
@@ -539,6 +544,13 @@ inline float led_power_polynomial_regress(float x)
 
 // UI
 
+// set acceleration from 0-255
+#define KNOB_ACCELERATION                       64
+
+// -1 is inverted direction in general
+// 1 is non-inverted
+#define KNOB_INVERTED                           1
+
 // multiplier for menu speed
 // < 256 is a multiplier (1 is the biggest multiplier of 256 times)
 // > 256 is a divider (32768 is the biggest divider of 128 times)
@@ -546,21 +558,7 @@ inline float led_power_polynomial_regress(float x)
 //
 // (value * 256) / speed = adjusted value
 // (10 * 256) / -512 = -5 - this is basiclly a by 2 divider that also inverts the direction
-//
-#define MENU_SPEED_MAIN                         ((256L << 8) / KNOB_MENU_SPEED)
-#define MENU_SPEED_LED                          ((256L << 8) / KNOB_MENU_SPEED)
-#define MENU_SPEED_PWM                          ((256L << 8) / KNOB_MENU_SPEED)
-#define MENU_SPEED_STALL                        ((256L << 8) / KNOB_MENU_SPEED)
-#define MENU_SPEED_RPM                          ((256L << 8) / KNOB_MENU_SPEED)
-#define MENU_SPEED_CURRENT_LIMIT                ((256L << 8) / KNOB_MENU_SPEED)
-#define MENU_SPEED_SETPOINT                     ((256L << 8) / KNOB_MENU_SPEED)
 
-// set acceleration from 0-255, 128 is default (50% of the acceleration is applied)
-#define KNOB_ACCELERATION                       128
-
-// -1 is inverted direction in general
-// 1 is non-inverted
-#define KNOB_INVERTED                           1
 // negative to invert the menu only
 #define KNOB_MENU_SPEED                         (256L * KNOB_INVERTED)
 // negative to invert toggling values only
@@ -716,7 +714,7 @@ enum class PidConfigEnum : uint8_t {
     MAX
 };
 
-typedef struct {
+struct EEPROMData {
     uint32_t magic;
     ControlModeEnum control_mode;
     uint8_t set_point_input_velocity;
@@ -730,25 +728,33 @@ typedef struct {
     float Kd;
     uint8_t max_pwm;
     uint16_t rpm_per_volt;
-} EEPROMData_t;
+
+    constexpr size_t size() const {
+        return sizeof(*this);
+    }
+
+    bool operator!=(const EEPROMData &data) const {
+        return memcmp(this, &data, size());
+    }
+};
 
 class Data_t {
 public:
     Data_t();
 
-    void copyTo(EEPROMData_t &eeprom_data);
-    void copyFrom(const EEPROMData_t &eeprom_data);
+    void copyTo(EEPROMData &eeprom_data);
+    void copyFrom(const EEPROMData &eeprom_data);
     void setLedBrightness();
     inline void setLedBrightnessNoDelay() {
-#if HAVE_LED_FADING
-        led_fade_timer = 0;
-        led_brightness_pwm = led_brightness;
-        if (led_brightness_pwm > 0) {
-            led_brightness_pwm--;
-        } else {
-            led_brightness_pwm++;
-        }
-#endif
+    #if HAVE_LED_FADING
+            led_fade_timer = 0;
+            led_brightness_pwm = led_brightness;
+            if (led_brightness_pwm > 0) {
+                led_brightness_pwm--;
+            } else {
+                led_brightness_pwm++;
+            }
+    #endif
         setLedBrightness();
     }
 
@@ -789,7 +795,6 @@ public:
 
     void refreshDisplay();
     void disableRefreshDisplay();
-    void menuResetAutoCloseTimer();
     bool checkReadKnobTimeout();
     void updateDutyCyle();
     void updateDutyCyle(uint32_t length);
@@ -812,11 +817,6 @@ inline void UIData_t::disableRefreshDisplay()
     refresh_timer = ~0;
 }
 
-inline void UIData_t::menuResetAutoCloseTimer()
-{
-    refresh_timer = millis() + DISPLAY_MENU_TIMEOUT;
-}
-
 extern Data_t data;
 extern UIData_t ui_data;
 
@@ -828,14 +828,7 @@ public:
 
 protected:
     virtual boolean _update_button_state() override {
-        // Serial.print('B');
-        // Serial.print(' ');
-        // Serial.print(_Port);
-        // Serial.print('/');
-        // Serial.print(_BitMask);
-        // Serial.print(' ');
-        // Serial.println(lastState.get<_Port>() & _BitMask);
-        return lastState.get<_Port>() & _BitMask;
+        return !(lastState.get<_Port>() & _BitMask);
     }
 
 private:
@@ -843,6 +836,21 @@ private:
 };
 
 extern Adafruit_SSD1306 display;
+extern Encoder knob;
+
+void menu_display_submenu();
+void print_pid_cfg(char *buffer, size_t len);
+void refresh_display();
+void write_eeprom(const __FlashStringHelper *message = _F(SAVED));
+void read_rotary_encoder();
+void update_duty_cycle();
+#if HAVE_VOLTAGE_DETECTION
+    uint16_t getVoltage();
+#endif
+#if HAVE_CURRENT_DETECTION
+    uint16_t getCurrent();
+#endif
+
 
 #include "menu.h"
 
@@ -850,9 +858,6 @@ extern Menu menu;
 extern InterruptPushButton<PIN_BUTTON1_PORT, _BV(PIN_BUTTON1_BIT)> button1;
 extern InterruptPushButton<PIN_BUTTON2_PORT, _BV(PIN_BUTTON2_BIT)> button2;
 
-void read_knob();
-
-void update_duty_cycle();
 
 inline void display_message(const char *message, uint16_t time, uint8_t size = 2, size_t len = ~0U)
 {
@@ -877,14 +882,3 @@ inline void display_message(const __FlashStringHelper *message, uint16_t time, u
     memcpy_P(buf, message, strSize);
     display_message(buf, time, size, len);
 }
-
-void menu_display_value();
-void print_pid_cfg(char *buffer, size_t len);
-void refresh_display();
-
-#if HAVE_VOLTAGE_DETECTION
-    uint16_t getVoltage();
-#endif
-#if HAVE_CURRENT_DETECTION
-    uint16_t getCurrent();
-#endif

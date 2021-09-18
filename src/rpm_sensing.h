@@ -22,7 +22,7 @@
 #endif
 
 // convert rpm to pulse length (µs)
-#define RPM_SENSE_RPM_TO_US(rpm) (1000000UL * 60UL / (rpm * (uint32_t)RPM_SENSE_PULSES_PER_TURN))
+#define RPM_SENSE_RPM_TO_US(rpm) (rpm ? (1000000UL * 60UL / (rpm * (uint32_t)RPM_SENSE_PULSES_PER_TURN)) : 0)
 
 // convert RPM pulse length (µs) to RPM
 #define RPM_SENSE_US_TO_RPM(value) ((1000000UL * 60UL / RPM_SENSE_PULSES_PER_TURN) / value)

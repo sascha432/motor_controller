@@ -31,6 +31,7 @@ enum class MenuEnum : uint8_t {
 class Menu {
 public:
     static constexpr size_t kMenuSize =  static_cast<size_t>(MenuEnum::MENU_COUNT);
+    static constexpr uint8_t kTimeoutShift = 4;
 
 public:
     // Menu(Adafruit_SSD1306 &display);
@@ -63,6 +64,10 @@ public:
 
     void enter();
     void exit();
+    void resetTimer();
+    void setTimeout(uint32_t millis);
+    uint32_t getTimeout() const;
+    void loop();
 
     // value will be adjusted according to the speed
     // speed < 256 = speed is a multiplier
@@ -90,18 +95,23 @@ private:
 
     // Adafruit_SSD1306 &_display;
     PGM_P _items[kMenuSize];
+    uint32_t _timer;
+    uint16_t _timeout; // timeout in milliseconds >> kTimeoutShift
     uint8_t _position;
     MenuState _state;
-
 };
 
-inline Menu::Menu() : _position(0), _state(MenuState::CLOSED)
-// inline Menu::Menu(Adafruit_SSD1306 &display) : _display(display), _position(0), _state(0)
+inline Menu::Menu() :
+    _timer(0),
+    _timeout(0),
+    _position(0),
+    _state(MenuState::CLOSED)
 {
 }
 
 inline void Menu::add(PGM_P items)
 {
+    // add all menu items from a string, terminated by too NUL bytes
     auto ptr = &_items[0];
     auto startPtr = items;
     while(pgm_read_byte(startPtr)) {
@@ -171,28 +181,28 @@ inline void Menu::close()
 
 inline void Menu::open()
 {
+    knob.setAcceleration(0);
+    resetTimer();
+    setTimeout(DISPLAY_MENU_TIMEOUT);
     _state = MenuState::MAIN;
-    display();
 }
 
 inline void Menu::up()
 {
     _position = (_position - 1) % size();
-    display();
 }
 
 inline void Menu::down()
 {
     _position = (_position + 1) % size();
-    display();
 }
 
 inline bool Menu::setPosition(uint8_t position)
 {
+    resetTimer();
     position = position % size();
     if (_position != position) {
         _position = position;
-        display();
         return true;
     }
     return false;
@@ -200,13 +210,60 @@ inline bool Menu::setPosition(uint8_t position)
 
 inline void Menu::enter()
 {
+    switch(getPosition()) {
+        case MenuEnum::MENU_BRAKE:
+        case MenuEnum::MENU_MODE:
+            knob.setAcceleration(0);
+            break;
+        case MenuEnum::MENU_STALL:
+        case MenuEnum::MENU_MOTOR:
+            knob.setAcceleration(255);
+            break;
+        default:
+            knob.setAcceleration(KNOB_ACCELERATION);
+            break;
+    }
     _state = MenuState::SUB_MENU;
+    resetTimer();
 }
 
 inline void Menu::exit()
 {
+    knob.setAcceleration(0);
     _state = MenuState::MAIN;
-    display();
+    resetTimer();
+}
+
+inline void Menu::resetTimer()
+{
+    _timer = millis();
+}
+
+inline void Menu::setTimeout(uint32_t millis)
+{
+    _timeout = millis >> kTimeoutShift;
+}
+
+inline uint32_t Menu::getTimeout() const
+{
+    return _timeout << kTimeoutShift;
+}
+
+inline void Menu::loop()
+{
+    if (getPosition() != MenuEnum::MENU_INFO && (
+        (isClosed() && _timeout) ||
+        (isOpen() && (millis() - _timer >= getTimeout()))
+    )) {
+        knob.setAcceleration(KNOB_ACCELERATION);
+        close();
+        _timeout = 0;
+        // checks for changes and updates the display
+        write_eeprom();
+    }
+    else if (isOpen()) {
+        display();
+    }
 }
 
 inline void Menu::_displayItem(uint8_t y, uint8_t index)
@@ -218,7 +275,7 @@ inline void Menu::_displayItem(uint8_t y, uint8_t index)
 
 inline int16_t Menu::getKnobValue(int16_t value, int16_t speed, int16_t min) const
 {
-    int16_t retval = (value << 8) / speed;
+    int16_t retval = (static_cast<int32_t>(value) << 8) / speed;
     // do we have a minimum return value?
     if (min > 0) {
         if (retval < 0) {

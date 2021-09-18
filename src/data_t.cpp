@@ -10,7 +10,7 @@
 
 Data_t::Data_t() :
     pid_config(PidConfigEnum::OFF),
-    led_brightness(50 * 100 / LED_MAX_PWM),
+    led_brightness(30 * 255 / LED_MAX_PWM), // 30%
     rpm_sense_average(0),
     rpm_per_volt(0),
     #if HAVE_LED_FADING
@@ -22,7 +22,7 @@ Data_t::Data_t() :
 {
 }
 
-void Data_t::copyTo(EEPROMData_t &eeprom_data)
+void Data_t::copyTo(EEPROMData &eeprom_data)
 {
     eeprom_data.control_mode = motor.getMode();
     eeprom_data.set_point_input_velocity = set_point_input_velocity;
@@ -35,7 +35,7 @@ void Data_t::copyTo(EEPROMData_t &eeprom_data)
     eeprom_data.rpm_per_volt = data.getRpmPerVolt();
 }
 
-void Data_t::copyFrom(const EEPROMData_t &eeprom_data)
+void Data_t::copyFrom(const EEPROMData &eeprom_data)
 {
     set_point_input_pwm = eeprom_data.set_point_input_pwm;
     set_point_input_velocity = eeprom_data.set_point_input_velocity;
@@ -67,7 +67,7 @@ void Data_t::setSetPoint(uint8_t value)
 void Data_t::changeSetPoint(int8_t value)
 {
     uint8_t &set_point_input = motor.isVelocityMode() ? set_point_input_velocity : set_point_input_pwm;
-    set_point_input = std::clamp<int16_t>(set_point_input + KNOB_GET_VALUE(value, MENU_SPEED_SETPOINT), POTI_MIN, POTI_MAX);
+    set_point_input = std::clamp<int16_t>(set_point_input + KNOB_GET_VALUE(value, KNOB_VALUE_SPEED), POTI_MIN, POTI_MAX);
 }
 
 void Data_t::setLedBrightness()

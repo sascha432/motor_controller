@@ -6,6 +6,11 @@
 
 void Menu::display()
 {
+    if (isActive()) {
+        menu_display_submenu();
+        return;
+    }
+
     __display().clearDisplay();
     __display().setTextSize(1);
     _displayItem(0, _position + size() - 1);
