@@ -98,13 +98,14 @@ void MicrosTimerMinMaxMean::printMeanTo(Print &print)
 void MicrosTimerMinMaxMean::printMinMeanMaxTo(Print &print)
 {
     if (_min == ~0UL) {
-        print.print("NA");
+        print.print(F("NA"));
 
     } else {
         print.print(_min);
     }
-    print.print('-');
-    print.print(getMean());
-    print.print('-');
-    print.print(_max);
+    print.printf_P(PSTR("-%ld-%ld"), getMean(), _max);
+    // print.print('-');
+    // print.print(getMean());
+    // print.print('-');
+    // print.print(_max);
 }

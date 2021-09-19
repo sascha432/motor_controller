@@ -38,30 +38,42 @@ void PidController::updatePidValue(PidConfigEnum pid, int16_t steps)
         default:
             return;
     }
-    Serial.printf_P(PSTR("pid %u: s:%d: "), (int)pid, steps);
-    Serial.print(value);
-    Serial.print('>');
+    #if HAVE_PRINTF_FLT
+        Serial.printf_P(PSTR("pid %u: s:%d: %.2f>"), pid, steps, value);
+    #else
+        Serial.printf_P(PSTR("pid %u: s:%d: "), (int)pid, steps);
+        Serial.print(value);
+        Serial.print('>');
+    #endif
     *output += value * steps;
     Serial.println(*output);
 }
 
 void PidController::printValues(Print &buffer, uint8_t type) const
-//void PidController::printValues(char *buffer, uint8_t len) const
+// void PidController::printValues(char *buffer, uint8_t type) const
 {
     //PrintBuffer buf(buffer, len);
     if (IS_PID_BV(type, OMUL) || IS_PID_BV(type, DTMUL)) {
-        buffer.print(F("PID Multi. "));
-        buffer.println(outputMultiplier, 6);
-        buffer.print(' ');
-        buffer.println(dtMultiplier, 6);
+        #if HAVE_PRINTF_FLT
+            buffer.printf_P(PSTR("PID Multi. %f\n%f\n"), outputMultiplier, dtMultiplier);
+        #else
+            buffer.print(F("PID Multi. "));
+            buffer.println(outputMultiplier, 6);
+            buffer.print(' ');
+            buffer.println(dtMultiplier, 6);
+        #endif
     }
     else {
-        buffer.print(F("PID "));
-        buffer.print(Kp, 1);
-        buffer.print(' ');
-        buffer.print(Ki, 4);
-        buffer.print(' ');
-        buffer.println(Kd, 3);
+        #if HAVE_PRINTF_FLT
+            buffer.printf_P(PSTR("PID %.1f %.4f %.3f\n"), Kp, Ki, Kd);
+        #else
+            buffer.print(F("PID "));
+            buffer.print(Kp, 1);
+            buffer.print(' ');
+            buffer.print(Ki, 4);
+            buffer.print(' ');
+            buffer.println(Kd, 3);
+        #endif
     }
 }
 

@@ -5,38 +5,38 @@
 #include <avr/boot.h>
 #include "helpers.h"
 
-// returns number of digits without trailing zeros after determining max. precision
-int count_decimals(double value, uint8_t max_precision, uint8_t max_decimals) {
-    auto precision = max_precision;
-    auto number = abs(value);
-    if (number < 1) {
-        while ((number = (number * 10)) < 1 && precision < max_decimals) { // increase precision for decimals
-            precision++;
-        }
-    }
-    else {
-        while ((number = (number / 10)) > 1 && precision > 1) { // reduce precision for decimals
-            precision--;
-        }
-    }
-    char format[8];
-    snprintf_P(format, sizeof(format), PSTR("%%.%uf"), precision);
-    char buf[32];
-    auto len = snprintf(buf, sizeof(buf), format, value);
-    char *ptr;
-    if (len < (int)sizeof(buf) && (ptr = strchr(buf, '.'))) {
-        ptr++;
-        char *endPtr = ptr + strlen(ptr);
-        while(--endPtr > ptr && *endPtr == '0') { // remove trailing zeros
-            *endPtr = 0;
-            precision--;
-        }
-    }
-    else {
-        precision = max_decimals; // buffer to small
-    }
-    return precision;
-}
+// // returns number of digits without trailing zeros after determining max. precision
+// int count_decimals(double value, uint8_t max_precision, uint8_t max_decimals) {
+//     auto precision = max_precision;
+//     auto number = abs(value);
+//     if (number < 1) {
+//         while ((number = (number * 10)) < 1 && precision < max_decimals) { // increase precision for decimals
+//             precision++;
+//         }
+//     }
+//     else {
+//         while ((number = (number / 10)) > 1 && precision > 1) { // reduce precision for decimals
+//             precision--;
+//         }
+//     }
+//     char format[8];
+//     snprintf_P(format, sizeof(format), PSTR("%%.%uf"), precision);
+//     char buf[32];
+//     auto len = snprintf(buf, sizeof(buf), format, value);
+//     char *ptr;
+//     if (len < (int)sizeof(buf) && (ptr = strchr(buf, '.'))) {
+//         ptr++;
+//         char *endPtr = ptr + strlen(ptr);
+//         while(--endPtr > ptr && *endPtr == '0') { // remove trailing zeros
+//             *endPtr = 0;
+//             precision--;
+//         }
+//     }
+//     else {
+//         precision = max_decimals; // buffer to small
+//     }
+//     return precision;
+// }
 
 size_t Print::__printf(vsnprint_t func, const char *format, va_list arg)
 {

@@ -93,9 +93,9 @@ void write_eeprom(const __FlashStringHelper *message)
     }
 }
 
-void set_version(char *buffer, uint8_t size)
+void set_version(char *buffer)
 {
-    snprintf_P(buffer, size, PSTR("Version %u.%u.%u"), VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
+    sprintf_P(buffer, PSTR("Version %u.%u.%u"), VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
 }
 
 // setup and clear display
@@ -213,36 +213,36 @@ void refresh_display()
                 }
                 display_rpm();
                 if (data.pid_config != PidConfigEnum::OFF) {
-                    //char buffer[64];
+                    // char buffer[64];
                     pid.printValues(display);
+                    // display.print(buffer);
                     //display.println(buffer);
-                    display.print('<');
+                    // display.print('<');
                     switch(data.pid_config) {
                         case PidConfigEnum::KP:
-                            display.print(F("Kp"));
+                            display.print(F("<Kp>"));
                             break;
                         case PidConfigEnum::KI:
-                            display.print(F("Ki"));
+                            display.print(F("<Ki>"));
                             break;
                         case PidConfigEnum::KD:
-                            display.print(F("Kp"));
+                            display.print(F("<Kp>"));
                             break;
                         case PidConfigEnum::OMUL:
-                            display.print(F("out-mul"));
+                            display.print(F("<out-mul>"));
                             break;
                         case PidConfigEnum::DTMUL:
-                            display.print(F("dt-mul"));
+                            display.print(F("<dt-mul>"));
                             break;
                         case PidConfigEnum::SAVE:
-                            display.print(F("Save"));
+                            display.print(F("<Save>"));
                             break;
                         case PidConfigEnum::RESTORE:
-                            display.print(F("Restore"));
+                            display.print(F("<Restore>"));
                             break;
                         default:
                             break;
                     }
-                    display.print('>');
                 }
                 else {
                     display_duty_cycle_bar(ui_data.display_duty_cycle_integral);
@@ -250,9 +250,10 @@ void refresh_display()
             }
             else {
                 display.setTextSize(1);
-                display.println(F("Set point velocity"));
-                display.print(data.getSetPointRPM());
-                display.println(_F(_rpm));
+                display.printf_P(PSTR("Set point velocity\n%u rpm\n"), data.getSetPointRPM());
+                // display.println(F("Set point velocity"));
+                // display.print(data.getSetPointRPM());
+                // display.println(_F(_rpm));
             }
         }
         else {
@@ -264,9 +265,13 @@ void refresh_display()
             }
             else {
                 display.setTextSize(1);
-                display.println(F("Set point PWM"));
-                display.print(data.getSetPointDutyCycle() * 100 / (float)MAX_DUTY_CYCLE, 1);
-                display.println('%');
+                #if HAVE_PRINTF_FLT
+                    display.printf_P(PSTR("Set point PWM %.1f%%\n"), data.getSetPointDutyCycle() * 100 / (float)MAX_DUTY_CYCLE);
+                #else
+                    display.println(F("Set point PWM"));
+                    display.print(data.getSetPointDutyCycle() * 100 / (float)MAX_DUTY_CYCLE, 1);
+                    display.println('%');
+                #endif
             }
         }
 
@@ -312,10 +317,14 @@ static void led_brightness_str(char *message, uint8_t size)
         strcpy_P(message, _T(OFF));
     }
     else {
-        PrintBuffer buf(message, size);
-        buf.print((data.led_brightness * 100) / static_cast<float>(LED_MAX_PWM), 1);
-        buf.print('%');
-        // snprintf_P(message, size, PSTR("%u%%"), (data.led_brightness * 100) / LED_MAX_PWM);
+        #if HAVE_PRINTF_FLT
+            sprintf_P(message, PSTR("%.1f%%"), (data.led_brightness * 100) / static_cast<float>(LED_MAX_PWM));
+        #else
+            PrintBuffer buf(message, size);
+            buf.print((data.led_brightness * 100) / static_cast<float>(LED_MAX_PWM), 1);
+            buf.print('%');
+            // snprintf_P(message, size, PSTR("%u%%"), (data.led_brightness * 100) / LED_MAX_PWM);
+        #endif
     }
 }
 
@@ -327,9 +336,13 @@ static void current_limit_str(char *message, uint8_t size)
         strcpy_P(message, _T(DISABLED));
     }
     else {
-        PrintBuffer buf(message, size);
-        buf.print(CURRENT_LIMIT_DAC_TO_CURRENT(current_limit.getLimit()), 1);
-        buf.print('A');
+        #if HAVE_PRINTF_FLT
+            sprintf_P(message, PSTR("%.1fA"), CURRENT_LIMIT_DAC_TO_CURRENT(current_limit.getLimit()));
+        #else
+            PrintBuffer buf(message, size);
+            buf.print(CURRENT_LIMIT_DAC_TO_CURRENT(current_limit.getLimit()), 1);
+            buf.print('A');
+        #endif
     }
 }
 
@@ -396,7 +409,7 @@ static void current_limit_str(char *message, uint8_t size)
 
 void menu_display_submenu()
 {
-    char message[16];
+    char message[64];
 
     display.clearDisplay();
     if (menu.getPosition() == MenuEnum::MENU_INFO) {
@@ -404,11 +417,11 @@ void menu_display_submenu()
         display.setTextSize(1);
         display.setCursor(0, 0);
 
-        set_version(message, sizeof(message));
+        set_version(message);
         display.println(message);
 
         pid.printValues(display);
-        //display.println(message);
+        // display.println(message);
 
         #if HAVE_CURRENT_LIMIT
             if (!current_limit.isDisabled()) {
@@ -423,18 +436,41 @@ void menu_display_submenu()
             display.printf_P(PSTR("LED %s\n"), message);
         #endif
 
-        #if HAVE_VOLTAGE_DETECTION
-            display.print(F("Input "));
-            display.print(getVoltage() / 1000.0, 2);
+        #if HAVE_VOLTAGE_DETECTION && !HAVE_CURRENT_DETECTION
+            #if HAVE_PRINTF_FLT
+                display.printf_P(PSTR("Input %.2fV\n"), getVoltage() / 1000.0);
+            #else
+                display.print(F("Input "));
+                display.print(getVoltage() / 1000.0, 2);
+                display.println('V');
+            #endif
+        #elif HAVE_CURRENT_DETECTION && HAVE_VOLTAGE_DETECTION
+            #if HAVE_PRINTF_FLT
+                display.printf_P(PSTR("Input %.2fV %.3fA\n"), getVoltage() / 1000.0, getCurrent() / 1000.0);
+            #else
+                display.print(F("Input "));
+                display.print(getVoltage() / 1000.0, 2);
+                display.print(F("V "));
+                display.print(getCurrent() / 1000.0, 3);
+                display.println('A');
+            #endif
+        #else
+            #if HAVE_PRINTF_FLT
+                display.printf_P(PSTR("Input %.2fV\n"), getVoltage() / 1000.0);
+            #else
+                display.print(F("Input "));
+                display.print(getVoltage() / 1000.0, 2);
+                display.println('V');
+            #endif
         #endif
 
-        #if HAVE_CURRENT_DETECTION && HAVE_VOLTAGE_DETECTION
-            display.print(F("V "));
-            display.print(getCurrent() / 1000.0, 3);
-            display.println('A');
-        #else
-            display.println('V');
-        #endif
+        // #if HAVE_CURRENT_DETECTION && HAVE_VOLTAGE_DETECTION
+        //     display.print(F("V "));
+        //     display.print(getCurrent() / 1000.0, 3);
+        //     display.println('A');
+        // #else
+        //     display.println('V');
+        // #endif
 
         ui_data.refresh_timer = millis() + 500;
     }
@@ -444,12 +480,16 @@ void menu_display_submenu()
         switch(menu.getPosition()) {
             case MenuEnum::MENU_SPEED:
                 if (motor.isDutyCycleMode()) {
-                    PrintBuffer buf(message, sizeof(message));
-                    buf.print(pid.duty_cycle * 100 / (float)MAX_DUTY_CYCLE, 1);
-                    buf.print('%');
+                    #if HAVE_PRINTF_FLT
+                        sprintf_P(message, PSTR("%.1f%%"), (pid.duty_cycle * 100) / static_cast<float>(MAX_DUTY_CYCLE));
+                    #else
+                        PrintBuffer buf(message, sizeof(message));
+                        buf.print(pid.duty_cycle * 100 / (float)MAX_DUTY_CYCLE, 1);
+                        buf.print('%');
+                    #endif
                 }
                 else {
-                    snprintf_P(message, sizeof(message), PSTR("%u rpm"), data.getSetPointRPM());
+                    sprintf_P(message, PSTR("%u rpm"), data.getSetPointRPM());
                 }
                 break;
             case MenuEnum::MENU_MODE:
@@ -464,18 +504,18 @@ void menu_display_submenu()
                     break;
             #endif
             case MenuEnum::MENU_PWM:
-                snprintf_P(message, sizeof(message), PSTR("%u%%"), motor.getMaxDutyCycle() * 100 / MAX_DUTY_CYCLE);
+                sprintf_P(message, PSTR("%u%%"), motor.getMaxDutyCycle() * 100 / MAX_DUTY_CYCLE);
                 break;
             case MenuEnum::MENU_BRAKE:
                 strcpy_P(message, motor.isBrakeEnabled() ? _T(ENABLED) : _T(DISABLED));
                 break;
             case MenuEnum::MENU_STALL:
-                snprintf_P(message, sizeof(message), PSTR("%u ms"), motor.getMaxStallTime());
+                sprintf_P(message, PSTR("%u ms"), motor.getMaxStallTime());
                 break;
             case MenuEnum::MENU_MOTOR: {
                     auto rpmV = data.getRpmPerVolt();
                     if (rpmV) {
-                        snprintf_P(message, sizeof(message), PSTR("%u rpm/"), rpmV);
+                        sprintf_P(message, PSTR("%u rpm/"), rpmV);
                         if (rpmV < 10000) {
                             strcat(message, PSTR("V"));
                         }
@@ -689,9 +729,7 @@ void setup()
     button2.onRelease(rotary_button_released);
 
     read_eeprom();
-
     setup_display();
-
     menu.add(menuItemsString);
 
     ATOMIC_BLOCK(ATOMIC_FORCEON) {
@@ -702,8 +740,8 @@ void setup()
         setup_interrupts();
     }
 
-    char message[16];
-    set_version(message, sizeof(message));
+    char message[32];
+    set_version(message);
     Serial.println(message);
     #if HAVE_COMPILED_ON_DATE
         Serial.print(F("Compiled on "));
@@ -716,9 +754,34 @@ void setup()
     knob.setAcceleration(KNOB_ACCELERATION);
 }
 
+void readStringUntil(char *begin, char *end)
+{
+    char ch;
+    while(Serial.available() && (begin < end) && (ch = Serial.read()) != '\n') {
+        *begin++ = ch;
+    }
+    *begin = 0;
+}
+
 void update_pid_cfg()
 {
-    //w1.0,0.001,0.0001,0.001,0.00000000001
+    #if 1
+    //TODO test code
+    // 1060byte
+    // w1.0,0.001,0.0001,0.001,0.00000000001
+    static const char *sep =  ",\r\n";
+    char buf[128];
+    readStringUntil(buf, buf + sizeof(buf) - 1);
+    char *ptr = strtok(buf, sep);
+    auto outPtr = &pid.Kp;
+    auto lastPtr = &pid.dtMultiplier;
+    while(ptr && outPtr <= lastPtr) {
+        *outPtr = atof(ptr);
+        ptr = strtok(nullptr, sep);
+    }
+    #else
+    // 1814byte
+    // w1.0,0.001,0.0001,0.001,0.00000000001
     static const char *sep =  ",\r\n";
     String str = Serial.readStringUntil('\n');
     char *ptr = strtok(str.begin(), sep);
@@ -737,8 +800,10 @@ void update_pid_cfg()
             }
         }
     }
+    #endif
     pid.reset();
     pid.printValues(Serial);
+    // Serial.print(buf);
     //print_pid_cfg_serial();
 }
 
@@ -863,6 +928,7 @@ void loop() {
                         if (i % 10 == 0) {
                             Serial.printf_P(PSTR("%03u: "), i);
                         }
+                        // Serial.printf_P(PSTR("%.3f%c"), getVoltage() / 1000.0, i % 10 == 9 ? '\n' : ' ');
                         Serial.print(getVoltage() / 1000.0, 3);
                         Serial.print(i % 10 == 9 ? '\n' : ' ');
                         delay(125);
@@ -883,6 +949,7 @@ void loop() {
                             Serial.printf_P(PSTR("%03u: "), i);
                         }
                         auto I = getCurrent();
+                        // Serial.printf_P(PSTR("%.3f%c"), I * (I >= 5000 ? 0.1 : 1.0), i % 10 == 9 ? '\n' : ' ');
                         Serial.print(I * (I >= 5000 ? 0.1 : 1.0), 3);
                         Serial.print(i % 10 == 9 ? '\n' : ' ');
                         delay(50);

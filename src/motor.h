@@ -244,13 +244,14 @@ inline void Motor::toggleMode()
 
 inline void Motor::dump(Print &print)
 {
-    print.print(_getMode(_mode));
-    print.print(' ');
-    print.print(_getState(_state));
-    print.print(' ');
-    print.print(getDutyCycle());
-    print.print('/');
-    print.print(getMaxDutyCycle());
-    print.println();
+    print.printf_P(PSTR("%s %s %u/%u\n"), _getMode(_mode), _getState(_state), getDutyCycle(), getMaxDutyCycle());
+    // print.print(_getMode(_mode));
+    // print.print(' ');
+    // print.print(_getState(_state));
+    // print.print(' ');
+    // print.print(getDutyCycle());
+    // print.print('/');
+    // print.print(getMaxDutyCycle());
+    // print.println();
 }
 

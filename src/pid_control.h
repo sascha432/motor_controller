@@ -29,7 +29,8 @@ public:
     }
     // 0=auto/use data.pid_config
     // or a bitset PID_BV(KD)|PID_BV(KI)|PID_BV(DTMUL)
-    void printValues(Print &buffer, uint8_t tye = 0) const;
+    // void printValues(char *buffer, uint8_t type = 0) const;
+    void printValues(Print &buffer, uint8_t type = 0) const;
 
     float Kp, Ki, Kd, outputMultiplier, dtMultiplier;
     float integral;
