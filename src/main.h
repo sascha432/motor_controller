@@ -723,7 +723,10 @@ enum class PidConfigEnum : uint8_t {
     MAX
 };
 
-struct EEPROMData {
+class ConfigData;
+
+class EEPROMData {
+public:
     uint32_t magic;
     ControlModeEnum control_mode;
     uint8_t set_point_input_velocity;
@@ -747,25 +750,15 @@ struct EEPROMData {
     }
 };
 
-class Data_t {
+class ConfigData {
 public:
-    Data_t();
+    ConfigData();
 
     void copyTo(EEPROMData &eeprom_data);
     void copyFrom(const EEPROMData &eeprom_data);
     void setLedBrightness();
-    inline void setLedBrightnessNoDelay() {
-    #if HAVE_LED_FADING
-            led_fade_timer = 0;
-            led_brightness_pwm = led_brightness;
-            if (led_brightness_pwm > 0) {
-                led_brightness_pwm--;
-            } else {
-                led_brightness_pwm++;
-            }
-    #endif
-        setLedBrightness();
-    }
+
+    void setLedBrightnessNoDelay();
 
     uint8_t getSetPoint() const;
     uint16_t getSetPointRPM() const {
@@ -798,9 +791,23 @@ private:
     uint8_t set_point_input_pwm;
 };
 
-class UIData_t {
+inline void ConfigData::setLedBrightnessNoDelay()
+{
+    #if HAVE_LED_FADING
+            led_fade_timer = 0;
+            led_brightness_pwm = led_brightness;
+            if (led_brightness_pwm > 0) {
+                led_brightness_pwm--;
+            } else {
+                led_brightness_pwm++;
+            }
+    #endif
+    setLedBrightness();
+}
+
+class UIConfigData {
 public:
-    UIData_t() = default;
+    UIConfigData() = default;
 
     void refreshDisplay();
     void disableRefreshDisplay();
@@ -816,18 +823,18 @@ public:
     volatile uint32_t display_current_limit_timer;
 };
 
-inline void UIData_t::refreshDisplay()
+inline void UIConfigData::refreshDisplay()
 {
     refresh_timer = 0;
 }
 
-inline void UIData_t::disableRefreshDisplay()
+inline void UIConfigData::disableRefreshDisplay()
 {
     refresh_timer = ~0;
 }
 
-extern Data_t data;
-extern UIData_t ui_data;
+extern ConfigData data;
+extern UIConfigData ui_data;
 
 template<uint8_t _Port, uint8_t _BitMask>
 class InterruptPushButton : public PushButton {

@@ -2,7 +2,7 @@
  * Author: sascha_lammers@gmx.de
  */
 
-#include <avr/boot.h>
+// #include <avr/boot.h>
 #include "helpers.h"
 
 // // returns number of digits without trailing zeros after determining max. precision
@@ -122,59 +122,7 @@ int assert_failed()
 
 #endif
 
-int Serial_print_bin(uint32_t value, uint8_t bits) {
-    auto bit = bits;
-    while(bit--) {
-        Serial.print((value & (1 << bit)) ? '1' : '0');
-    }
-    return bits;
-}
-
-bool Serial_readLine(String &input, bool allowEmpty) {
-    int ch;
-    while (Serial.available()) {
-        ch = Serial.read();
-        if (ch == '\b') {
-            input.remove(-1, 1);
-            Serial.print(F("\b \b"));
-        }
-        else if (ch == '+') {
-            input = "+";
-            return true;
-         } else if (ch == '-') {
-            input = "-";
-            return true;
-        } else if (ch == 27) {
-            Serial.write('\r');
-            size_t count = input.length() + 1;
-            while(count--) {
-                Serial.write(' ');
-            }
-            Serial.write('\r');
-            input = String();
-        }
-        else if (ch == '\r' || ch == -1) {
-        }
-        else if (ch == '\n') {
-            if (input.length() != 0 || allowEmpty) { // ignore empty lines
-                if (Serial.available() && Serial.peek() == '\r') { // CRLF, CR should already be gone...
-                    Serial.read();
-                }
-                input += '\n';
-                Serial.println();
-                return true;
-            } else {
-                if (allowEmpty ) {
-                    return true;
-                }
-            }
-        } else {
-            input += (char)ch;
-        }
-    }
-    return false;
-}
-
+#if 0
 /*
 ATmega1280      1e9703
 ATmega1281      1e9704
@@ -325,3 +273,4 @@ std::unique_ptr<uint8_t> get_mcu_type(char *&mcu, uint8_t *&sig, uint8_t *&fuses
 
     return std::unique_ptr<uint8_t>(buffer);
 }
+#endif

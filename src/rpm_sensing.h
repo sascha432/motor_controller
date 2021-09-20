@@ -79,17 +79,17 @@ private:
 
 extern RpmSense rpm_sense;
 
-inline void UIData_t::updateDutyCyle()
+inline void UIConfigData::updateDutyCyle()
 {
     updateDutyCyle(rpm_sense.getTimerIntegralMicros());
 }
 
-inline void UIData_t::updateDutyCyle(uint32_t length)
+inline void UIConfigData::updateDutyCyle(uint32_t length)
 {
     display_pulse_length_integral = (display_pulse_length_integral * DISPLAY_RPM_MULTIPLIER + length) / static_cast<uint8_t>(DISPLAY_RPM_MULTIPLIER + 1);
 }
 
-inline void UIData_t::updateRpmPulseWidth(uint32_t length)
+inline void UIConfigData::updateRpmPulseWidth(uint32_t length)
 {
     ui_data.display_pulse_length_integral = (ui_data.display_pulse_length_integral * DISPLAY_RPM_MULTIPLIER + length) / static_cast<uint8_t>(DISPLAY_RPM_MULTIPLIER + 1);
 }

@@ -63,7 +63,7 @@ void Motor::start()
     current_limit.enable(false);
     ui_data.display_current_limit_timer = 0;
     ATOMIC_BLOCK(ATOMIC_FORCEON) {
-        ui_data = UIData_t();
+        ui_data = UIConfigData();
         _state = MotorStateEnum::ON;
         _startTime = millis();
         rpm_sense.reset();

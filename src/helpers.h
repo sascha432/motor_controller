@@ -356,12 +356,14 @@ private:
     uint8_t _size;
 };
 
+#if 0
 uint8_t *get_signature(uint8_t *sig);
 std::unique_ptr<uint8_t> get_mcu_type(char *&mcu, uint8_t *&sig, uint8_t *&fuses);
+#endif
 
 // int count_decimals(double value, uint8_t max_precision = FLT_DIG, uint8_t max_decimals = 8);
 
-typedef unsigned long ulong;
+// typedef unsigned long ulong;
 
 #define STR(s)                  _STR(s)
 #define _STR(s)                 #s
@@ -393,7 +395,6 @@ inline void swap(T &a, T &b) {
 };
 
 
-bool Serial_readLine(String &input, bool allowEmpty);
 size_t Serial_flush_input();
 
 inline size_t Serial_flush_input() {

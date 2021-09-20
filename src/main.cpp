@@ -24,8 +24,8 @@
     const char __compile_date__[] PROGMEM = { __DATE__ " " __TIME__ };
 #endif
 
-Data_t data;
-UIData_t ui_data;
+ConfigData data;
+UIConfigData ui_data;
 Encoder knob(PIN_ROTARY_ENC_CLK, PIN_ROTARY_ENC_DT);
 InterruptPushButton<PIN_BUTTON1_PORT, _BV(PIN_BUTTON1_BIT)> button1(PIN_BUTTON1, PRESSED_WHEN_LOW | ENABLE_INTERNAL_PULLUP);
 InterruptPushButton<PIN_BUTTON2_PORT, _BV(PIN_BUTTON2_BIT)> button2(PIN_BUTTON2, PRESSED_WHEN_LOW | ENABLE_INTERNAL_PULLUP);
@@ -70,7 +70,7 @@ void read_eeprom()
     }
     // only called once in setup
     // else {
-    //     data = Data_t();
+    //     data = ConfigData();
     //     pid.resetPidValues();
     // }
     EEPROM.end();
@@ -459,7 +459,7 @@ void menu_display_submenu()
                     if (rpmV) {
                         sprintf_P(message, PSTR("%u rpm/"), rpmV);
                         if (rpmV < 10000) {
-                            strcat(message, PSTR("V"));
+                            strcat_P(message, PSTR("V"));
                         }
                     }
                     else {
@@ -532,7 +532,7 @@ void rotary_button_released(Button& btn, uint16_t duration)
                     break;
                 case MenuEnum::MENU_RESTORE: {
                         menu.close();
-                        data = {};
+                        data = ConfigData();
                         pid.resetPidValues();
                         write_eeprom(F("RESTORED"));
                         read_eeprom();

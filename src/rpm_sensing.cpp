@@ -76,21 +76,21 @@ void RpmSense::_captureISR()
     // disable RPM_SENSE_TOGGLE_EDGE
     auto counter = ICR1;
 
-#if RPM_SENSE_TOGGLE_EDGE
-    // toggle edge
-    if (TCCR1B & _BV(ICES1)) {
-        TCCR1B &= ~_BV(ICES1);
-    } else {
-        TCCR1B |= _BV(ICES1);
-    }
-    // TIFR1 |= _BV(ICF1);
-    sbi(TIFR1, ICF1);
+    #if RPM_SENSE_TOGGLE_EDGE
+        // toggle edge
+        if (TCCR1B & _BV(ICES1)) {
+            TCCR1B &= ~_BV(ICES1);
+        }
+        else {
+            TCCR1B |= _BV(ICES1);
+        }
+        sbi(TIFR1, ICF1);
 
-    // Measurement of an external signal’s duty cycle requires that the trigger edge is changed after each capture. Changing the
-    // edge sensing must be done as early as possible after the ICR1 register has been read. After a change of the edge, the input
-    // capture flag (ICF1) must be cleared by software (writing a logical one to the I/O bit location). For measuring frequency only,
-    // the clearing of the ICF1 flag is not required (if an interrupt handler is used).
-#endif
+        // Measurement of an external signal’s duty cycle requires that the trigger edge is changed after each capture. Changing the
+        // edge sensing must be done as early as possible after the ICR1 register has been read. After a change of the edge, the input
+        // capture flag (ICF1) must be cleared by software (writing a logical one to the I/O bit location). For measuring frequency only,
+        // the clearing of the ICF1 flag is not required (if an interrupt handler is used).
+    #endif
     _events++;
     if (_isrLocked) {
         return;
@@ -120,11 +120,13 @@ void RpmSense::_captureISR()
         cli();
         // first interrupt after a reset
         _ticksIntegral = diff;
-    } else if (data.rpm_sense_average == 0) {
+    }
+    else if (data.rpm_sense_average == 0) {
         cli();
         // no averaging
         _ticksIntegral = diff;
-    } else {
+    }
+    else {
         // avg over data.rpm_sense_average values
         auto tmp = ((_ticksIntegral * data.rpm_sense_average) + diff) / static_cast<uint8_t>(data.rpm_sense_average + events);
         cli();
