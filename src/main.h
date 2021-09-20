@@ -434,8 +434,13 @@ inline void setCurrentLimitLedOn()
 // A2/PC2/25
 #define PIN_CURRENT                             A2
 
-// current shunt value
-#define CURRENT_LIMIT_SHUNT                     8           // 0.008R
+// current shunt value in ohm
+#define CURRENT_LIMIT_SHUNT                     0.008
+
+// CURRENT_LIMIT_SHUNT in milliohm
+#ifndef CURRENT_SHUNT_CALIBRATION
+#define CURRENT_SHUNT_CALIBRATION               1.0
+#endif
 
 // min. current in A
 #define CURRENT_LIMIT_MIN_CURRENT               1
@@ -448,7 +453,7 @@ inline void setCurrentLimitLedOn()
 #endif
 
 // shunt voltage to current
-#define CURRENT_LIMIT_SHUNT_mV_TO_mA(value)     (value * 1000UL / CURRENT_LIMIT_SHUNT)
+#define CURRENT_LIMIT_SHUNT_mV_TO_mA(value)     (value * CURRENT_LIMIT_SHUNT * CURRENT_SHUNT_CALIBRATION)
 
 // current in A to menu value
 #define CURRENT_LIMIT_CURRENT_TO_VALUE(current) static_cast<uint8_t>(current * 254 / CURRENT_LIMIT_MAX_CURRENT)
@@ -636,13 +641,17 @@ inline float led_power_polynomial_regress(uint8_t pwm)
         )) \
     ))
 
-// CURRENT_LIMIT_SHUNT in milliohm
-#ifndef CURRENT_SHUNT_CALIBRATION
-#define CURRENT_SHUNT_CALIBRATION               1.0
-#endif
-#define CURRENT_SHUNT_TO_mV(adc)                ((adc) * (1.1 * 1000.0 / 1024.0 * CURRENT_SHUNT_CALIBRATION))
-#define CURRENT_SHUNT_TO_mA(mV)                 ((mV) * 1000 / CURRENT_LIMIT_SHUNT)
-#define CURRENT_SHUNT_TO_A(mV)                  ((mV) / CURRENT_LIMIT_SHUNT)
+// #define CURRENT_SHUNT_TO_mA(adc, counter)          ((adc) * (kReferenceVoltage * 1000.0 / 1024.0 * CURRENT_SHUNT_CALIBRATION * CURRENT_LIMIT_SHUNT / counter))
+// #define CURRENT_SHUNT_TO_mA(mV)                 ((mV) * 1000 / CURRENT_LIMIT_SHUNT)
+// #define CURRENT_SHUNT_TO_mA(adc)                ((adc) * (kReferenceVoltage * 1000.0 / 1024.0 * CURRENT_SHUNT_CALIBRATION))
+// #define CURRENT_SHUNT_TO_A(mV)                  ((mV) / CURRENT_LIMIT_SHUNT)
+
+// #define CURRENT_SHUNT_TO_mV(adc)                ((adc) * (1.1 * 1000.0 / 1024.0 * CURRENT_SHUNT_CALIBRATION))
+// #define CURRENT_SHUNT_TO_mA(mV)                 ((mV) * 1000 / CURRENT_LIMIT_SHUNT)
+// #define CURRENT_SHUNT_TO_A(mV)                  ((mV) / CURRENT_LIMIT_SHUNT)
+
+#define CURRENT_SHUNT_TO_mA(adc, counter)       ((adc) * (kReferenceVoltage * CURRENT_SHUNT_CALIBRATION * 1000 / CURRENT_LIMIT_SHUNT / 1024.0 / counter))
+#define CURRENT_SHUNT_TO_A(adc, counter)        ((adc) * (kReferenceVoltage * CURRENT_SHUNT_CALIBRATION / CURRENT_LIMIT_SHUNT / 1024.0 / counter))
 
 
 #define POTI_TO_RPM(value)                      MAP(value, POTI_MIN, POTI_MAX, RPM_MIN, RPM_MAX)
@@ -844,13 +853,6 @@ void refresh_display();
 void write_eeprom(const __FlashStringHelper *message = _F(SAVED));
 void read_rotary_encoder();
 void update_duty_cycle();
-#if HAVE_VOLTAGE_DETECTION
-    uint16_t getVoltage();
-#endif
-#if HAVE_CURRENT_DETECTION
-    uint16_t getCurrent();
-#endif
-
 
 #include "menu.h"
 

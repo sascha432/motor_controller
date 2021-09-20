@@ -14,6 +14,7 @@
  - Display LED power
  - Implemented acceleration into the rotary encoder library
  - New rotary encoder algorithm with debouncing
+ - Interrupt driven free running ADC
 
 ## 1.0.3
 

@@ -18,6 +18,7 @@
 #include "timer.h"
 #include "DebugBuffer.h"
 #include "helpers.h"
+#include "adc.h"
 
 #if HAVE_COMPILED_ON_DATE
     const char __compile_date__[] PROGMEM = { __DATE__ " " __TIME__ };
@@ -106,7 +107,7 @@ void setup_display()
     // the display needs some time to power up...
     // fade in the LED meanwhile and blink the current limit indicator LED
     #if HAVE_LED_FADING
-        unsigned long start = millis();
+        auto start = millis();
         uint16_t time;
         do {
             time = millis() - start;
@@ -173,7 +174,7 @@ void display_set_point_and_voltage()
     display.setCursor(SCREEN_WIDTH - (FONT_WIDTH * len), 0);
     display.print(buf);
     #if HAVE_VOLTAGE_DETECTION
-        auto U = getVoltage() / 1000.0;
+        auto U = adc.getVoltage_V();
         display.setCursor(SCREEN_WIDTH - ((U >= 10) ? 5 * FONT_WIDTH : FONT_WIDTH * 4), FONT_HEIGHT);
         display.println(U, 2);
     #endif
@@ -348,65 +349,6 @@ static void current_limit_str(char *message, uint8_t size)
 
 #endif
 
-#define ADC_VALUES 1024
-
-#if HAVE_VOLTAGE_DETECTION
-
-    uint16_t getVoltage()
-    {
-        #define NUM_READS 5
-        #if NUM_READS * ADC_VALUES > 0xffff
-        #error 16bit overflow
-        #endif
-        constexpr uint16_t kMultiplier = ((1000UL << 8) * (VOLTAGE_DETECTION_DIVIDER / (ADC_VALUES * NUM_READS / 1.1)));
-
-        uint16_t value = analogRead(PIN_VOLTAGE);
-        for(uint8_t i = 1; i < NUM_READS; i++) {
-            value += analogRead(PIN_VOLTAGE);
-            delay(1);
-        }
-        return (static_cast<uint32_t>(value) * kMultiplier) >> 8;
-        #undef NUM_READS
-    }
-
-#else
-
-    uint16_t getVoltage()
-    {
-        return 5000;
-    }
-
-#endif
-
-#if HAVE_CURRENT_DETECTION
-
-    uint16_t getCurrent()
-    {
-        #define NUM_READS 1
-        #if NUM_READS * ADC_VALUES > 0xffff
-        #error 16bit overflow
-        #endif
-
-        uint16_t value = analogRead(PIN_CURRENT);
-        #if NUM_READS > 1
-            for(uint8_t i = 1; i < NUM_READS; i++) {
-                value += analogRead(PIN_VOLTAGE);
-                delayMicroseconds(100);
-            }
-        #endif
-        return CURRENT_SHUNT_TO_mA(CURRENT_SHUNT_TO_mV(value)) / NUM_READS;
-        #undef NUM_READS
-    }
-
-#else
-
-    uint16_t getCurrent()
-    {
-        return 0;
-    }
-
-#endif
-
 void menu_display_submenu()
 {
     char message[64];
@@ -438,28 +380,28 @@ void menu_display_submenu()
 
         #if HAVE_VOLTAGE_DETECTION && !HAVE_CURRENT_DETECTION
             #if HAVE_PRINTF_FLT
-                display.printf_P(PSTR("Input %.2fV\n"), getVoltage() / 1000.0);
+                display.printf_P(PSTR("Input %.2fV\n"), adc.getVoltage_V());
             #else
                 display.print(F("Input "));
-                display.print(getVoltage() / 1000.0, 2);
+                display.print(adc.getVoltage_V(), 2);
                 display.println('V');
             #endif
         #elif HAVE_CURRENT_DETECTION && HAVE_VOLTAGE_DETECTION
             #if HAVE_PRINTF_FLT
-                display.printf_P(PSTR("Input %.2fV %.3fA\n"), getVoltage() / 1000.0, getCurrent() / 1000.0);
+                display.printf_P(PSTR("Input %.2fV %.3fA\n"), adc.getVoltage_V(), adc.getCurrent_A());
             #else
                 display.print(F("Input "));
-                display.print(getVoltage() / 1000.0, 2);
+                display.print(adc.getVoltage_V(), 2);
                 display.print(F("V "));
-                display.print(getCurrent() / 1000.0, 3);
+                display.print(adc.getCurrent_A(), 3);
                 display.println('A');
             #endif
         #else
             #if HAVE_PRINTF_FLT
-                display.printf_P(PSTR("Input %.2fV\n"), getVoltage() / 1000.0);
+                display.printf_P(PSTR("Input %.2fV\n"), adc.getVoltage_V());
             #else
                 display.print(F("Input "));
-                display.print(getVoltage() / 1000.0, 2);
+                display.print(adc.getVoltage_V(), 2);
                 display.println('V');
             #endif
         #endif
@@ -722,7 +664,9 @@ void setup()
         pinMode(PIN_CURRENT, INPUT);
     #endif
     #if HAVE_VOLTAGE_DETECTION || HAVE_CURRENT_DETECTION
-        analogReference(INTERNAL);
+        // it takes a while after setup to get the first values
+        // these are collected during the display initializtation, which takes 750ms (setup_display())
+        adc.setup();
     #endif
 
     button1.onPress(start_stop_button_pressed);
@@ -928,8 +872,7 @@ void loop() {
                         if (i % 10 == 0) {
                             Serial.printf_P(PSTR("%03u: "), i);
                         }
-                        // Serial.printf_P(PSTR("%.3f%c"), getVoltage() / 1000.0, i % 10 == 9 ? '\n' : ' ');
-                        Serial.print(getVoltage() / 1000.0, 3);
+                        Serial.print(adc.getVoltage_V(), 3);
                         Serial.print(i % 10 == 9 ? '\n' : ' ');
                         delay(125);
                         if (Serial.available()) {
@@ -942,15 +885,13 @@ void loop() {
             #endif
             #if HAVE_CURRENT_DETECTION
                 case 'V':
-                    Serial.print(F("Current (mA) "));
+                    Serial.print(F("Current (A) "));
                     Serial_flush_input();
                     for(uint8_t i = 0; i < 250; i++) {
                         if (i % 10 == 0) {
                             Serial.printf_P(PSTR("%03u: "), i);
                         }
-                        auto I = getCurrent();
-                        // Serial.printf_P(PSTR("%.3f%c"), I * (I >= 5000 ? 0.1 : 1.0), i % 10 == 9 ? '\n' : ' ');
-                        Serial.print(I * (I >= 5000 ? 0.1 : 1.0), 3);
+                        Serial.print(adc.getCurrent_A(), 3);
                         Serial.print(i % 10 == 9 ? '\n' : ' ');
                         delay(50);
                         if (Serial.available()) {
