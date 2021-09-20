@@ -23,7 +23,6 @@ class ADCInterrupt {
 public:
     // internal 1.1V reference
     static constexpr uint8_t kAnalogSource = INTERNAL;
-    static constexpr float kReferenceVoltage = 1.1;
     // values of the ADC 0-123
     static constexpr uint16_t kAdcValues = 1024;
     // amount of reads before switching to the next pin
@@ -123,7 +122,7 @@ inline void ADCInterrupt::setup()
     inline uint16_t ADCInterrupt::getVoltage_mV() const
     {
         constexpr uint8_t kPrecisionShift = 10;
-        constexpr uint16_t kMultiplier = ((1000UL << kPrecisionShift) * (VOLTAGE_DETECTION_DIVIDER * kReferenceVoltage / (kAdcValues * static_cast<float>(kReadCounter))));
+        constexpr uint16_t kMultiplier = ((1000UL << kPrecisionShift) * (VoltageDetection::kDivider * ADCRef::kReferenceVoltage / (kAdcValues * static_cast<float>(kReadCounter))));
         uint16_t voltage;
         ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
             voltage = _voltage;
@@ -133,7 +132,7 @@ inline void ADCInterrupt::setup()
 
     inline float ADCInterrupt::getVoltage_V() const
     {
-        constexpr float kMultiplier = (1.0 * (VOLTAGE_DETECTION_DIVIDER * kReferenceVoltage / (kAdcValues * static_cast<float>(kReadCounter))));
+        constexpr float kMultiplier = (1.0 * (VoltageDetection::kDivider * ADCRef::kReferenceVoltage / (kAdcValues * static_cast<float>(kReadCounter))));
         uint16_t voltage;
         ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
             voltage = _voltage;

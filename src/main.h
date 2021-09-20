@@ -437,19 +437,14 @@ inline void setCurrentLimitLedOn()
 // current shunt value in ohm
 #define CURRENT_LIMIT_SHUNT                     0.008
 
-// CURRENT_LIMIT_SHUNT in milliohm
+// current shunt calibration
 #ifndef CURRENT_SHUNT_CALIBRATION
 #define CURRENT_SHUNT_CALIBRATION               1.0
 #endif
 
-// min. current in A
-#define CURRENT_LIMIT_MIN_CURRENT               1
-
-// max. current in A
-#define CURRENT_LIMIT_MAX_CURRENT               40
-
-#if CURRENT_LIMIT_MAX_CURRENT > 65
-#error limited to 65000mA
+// calibation value for the voltage detection
+#ifndef VOLTAGE_DETECTION_CALIBRATION
+#define VOLTAGE_DETECTION_CALIBRATION           1.0
 #endif
 
 // DAC @ 980Hz
@@ -464,9 +459,19 @@ namespace DAC {
 
 }
 
+namespace ADCRef {
+
+    // ADC analog voltage reference
+    static constexpr float kReferenceVoltage = 1.1;
+
+    static constexpr float kShuntTomA = (kReferenceVoltage * CURRENT_SHUNT_CALIBRATION * 1000.0 / CURRENT_LIMIT_SHUNT / 1024.0);
+    static constexpr float kShuntToA = kShuntTomA / 1000.0;
+
+}
+
 // convert ADC value to mA/A
-#define CURRENT_SHUNT_TO_mA(adc, counter)       ((adc) * (kReferenceVoltage * CURRENT_SHUNT_CALIBRATION * 1000 / CURRENT_LIMIT_SHUNT / 1024.0 / counter))
-#define CURRENT_SHUNT_TO_A(adc, counter)        ((adc) * (kReferenceVoltage * CURRENT_SHUNT_CALIBRATION / CURRENT_LIMIT_SHUNT / 1024.0 / counter))
+#define CURRENT_SHUNT_TO_mA(adc, counter)       ((adc) * (ADCRef::kShuntTomA / counter))
+#define CURRENT_SHUNT_TO_A(adc, counter)        ((adc) * (ADCRef::kShuntToA / counter))
 
 // convert PWM to A
 #define CURRENT_LIMIT_DAC_TO_CURRENT(pwm)       (pwm * DAC::kPwmCurrentMultiplier)
@@ -627,13 +632,14 @@ inline float led_power_polynomial_regress(uint8_t pwm)
 #define MIN_DUTY_CYCLE                          1
 #define MAX_DUTY_CYCLE                          255
 
-// voltage divider 2.7K/1000K, needs to be adjusted to real values to be accurate
-#define VOLTAGE_DETECTION_R1                    2700.0
-#define VOLTAGE_DETECTION_R2                    100000.0
-#ifndef VOLTAGE_DETECTION_CALIBRATION
-#define VOLTAGE_DETECTION_CALIBRATION           1.0
-#endif
-#define VOLTAGE_DETECTION_DIVIDER               (((VOLTAGE_DETECTION_R2 + VOLTAGE_DETECTION_R1) / VOLTAGE_DETECTION_R1) * VOLTAGE_DETECTION_CALIBRATION)
+namespace VoltageDetection {
+
+    static constexpr float kR1 = 2700.0;
+    static constexpr float kR2 = 100000.0;
+
+    static constexpr float kDivider = (((kR2 + kR1) / kR1) * VOLTAGE_DETECTION_CALIBRATION);
+
+}
 
 #define MAP(value, FROM_MIN, FROM_MAX, TO_MIN, TO_MAX) \
     (value <= FROM_MIN ? TO_MIN : ( \
