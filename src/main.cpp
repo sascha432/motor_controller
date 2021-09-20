@@ -251,10 +251,13 @@ void refresh_display()
             }
             else {
                 display.setTextSize(1);
-                display.printf_P(PSTR("Set point velocity\n%u rpm\n"), data.getSetPointRPM());
-                // display.println(F("Set point velocity"));
-                // display.print(data.getSetPointRPM());
-                // display.println(_F(_rpm));
+                #if 0
+                    display.printf_P(PSTR("Set point velocity\n%u rpm\n"), data.getSetPointRPM());
+                #else
+                    display.println(F("Set point velocity"));
+                    display.print(data.getSetPointRPM());
+                    display.println(_F(_rpm));
+                #endif
             }
         }
         else {

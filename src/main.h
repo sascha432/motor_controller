@@ -452,23 +452,24 @@ inline void setCurrentLimitLedOn()
 #error limited to 65000mA
 #endif
 
-// shunt voltage to current
-#define CURRENT_LIMIT_SHUNT_mV_TO_mA(value)     (value * CURRENT_LIMIT_SHUNT * CURRENT_SHUNT_CALIBRATION)
+// DAC @ 980Hz
+namespace DAC {
 
-// current in A to menu value
-#define CURRENT_LIMIT_CURRENT_TO_VALUE(current) static_cast<uint8_t>(current * 254 / CURRENT_LIMIT_MAX_CURRENT)
+    static constexpr float kVoltageDividerR1 = 100000.0;
+    static constexpr float kVoltageDividerR2 = 6800.0;
 
-// menu value to current in mA
-#define CURRENT_LIMIT_VALUE_TO_CURRENT(value)   static_cast<uint16_t>()
+    static constexpr float kPwmVoltageMultiplier = ((kVoltageDividerR2 * 5.0) / (kVoltageDividerR1 + kVoltageDividerR2));
+    // Amps per PWM step
+    static constexpr float kPwmCurrentMultiplier = CURRENT_SHUNT_CALIBRATION * (kPwmVoltageMultiplier / 256) / CURRENT_LIMIT_SHUNT;
 
-// DAC @ 980Hz, 1020µs / 3.99µs steps
-// PWM output
+}
 
-//TODO
-#define CURRENT_LIMIT_DAC_TO_mV(value)          0
+// convert ADC value to mA/A
+#define CURRENT_SHUNT_TO_mA(adc, counter)       ((adc) * (kReferenceVoltage * CURRENT_SHUNT_CALIBRATION * 1000 / CURRENT_LIMIT_SHUNT / 1024.0 / counter))
+#define CURRENT_SHUNT_TO_A(adc, counter)        ((adc) * (kReferenceVoltage * CURRENT_SHUNT_CALIBRATION / CURRENT_LIMIT_SHUNT / 1024.0 / counter))
 
-// adc value to
- #define CURRENT_LIMIT_DAC_TO_CURRENT(value)    CURRENT_LIMIT_SHUNT_mV_TO_mA(CURRENT_LIMIT_DAC_TO_mV(value))
+// convert PWM to A
+#define CURRENT_LIMIT_DAC_TO_CURRENT(pwm)       (pwm * DAC::kPwmCurrentMultiplier)
 
 // after the current limit has been trigger, ramp up the pwm signal slowly. time in microseconds
 #define CURRENT_LIMIT_RAMP_UP_PERIOD            1500
@@ -489,7 +490,7 @@ inline void setCurrentLimitLedOn()
 
 // LED PWM 980Hz for MT3608
 #define LED_MIN_PWM                             32
-#define LED_MAX_PWM                             240     // more than 240 does not increase brightness much
+#define LED_MAX_PWM                             240     // more than 240 does not increase brightness much for my LEDs
 #define LED_FADE_TIME                           10
 
 #if LED_MIN_PWM < 5
@@ -626,7 +627,7 @@ inline float led_power_polynomial_regress(uint8_t pwm)
 #define MIN_DUTY_CYCLE                          1
 #define MAX_DUTY_CYCLE                          255
 
-// voltage divider 100K/1000K, needs to be adjusted to real values to be accurate
+// voltage divider 2.7K/1000K, needs to be adjusted to real values to be accurate
 #define VOLTAGE_DETECTION_R1                    2700.0
 #define VOLTAGE_DETECTION_R2                    100000.0
 #ifndef VOLTAGE_DETECTION_CALIBRATION
@@ -640,18 +641,6 @@ inline float led_power_polynomial_regress(uint8_t pwm)
             ((value * (uint32_t)(TO_MAX - TO_MIN) / (FROM_MAX - FROM_MIN)) + (TO_MIN - (FROM_MIN * (uint32_t)(TO_MAX - TO_MIN) / (FROM_MAX - FROM_MIN)))) \
         )) \
     ))
-
-// #define CURRENT_SHUNT_TO_mA(adc, counter)          ((adc) * (kReferenceVoltage * 1000.0 / 1024.0 * CURRENT_SHUNT_CALIBRATION * CURRENT_LIMIT_SHUNT / counter))
-// #define CURRENT_SHUNT_TO_mA(mV)                 ((mV) * 1000 / CURRENT_LIMIT_SHUNT)
-// #define CURRENT_SHUNT_TO_mA(adc)                ((adc) * (kReferenceVoltage * 1000.0 / 1024.0 * CURRENT_SHUNT_CALIBRATION))
-// #define CURRENT_SHUNT_TO_A(mV)                  ((mV) / CURRENT_LIMIT_SHUNT)
-
-// #define CURRENT_SHUNT_TO_mV(adc)                ((adc) * (1.1 * 1000.0 / 1024.0 * CURRENT_SHUNT_CALIBRATION))
-// #define CURRENT_SHUNT_TO_mA(mV)                 ((mV) * 1000 / CURRENT_LIMIT_SHUNT)
-// #define CURRENT_SHUNT_TO_A(mV)                  ((mV) / CURRENT_LIMIT_SHUNT)
-
-#define CURRENT_SHUNT_TO_mA(adc, counter)       ((adc) * (kReferenceVoltage * CURRENT_SHUNT_CALIBRATION * 1000 / CURRENT_LIMIT_SHUNT / 1024.0 / counter))
-#define CURRENT_SHUNT_TO_A(adc, counter)        ((adc) * (kReferenceVoltage * CURRENT_SHUNT_CALIBRATION / CURRENT_LIMIT_SHUNT / 1024.0 / counter))
 
 
 #define POTI_TO_RPM(value)                      MAP(value, POTI_MIN, POTI_MAX, RPM_MIN, RPM_MAX)
