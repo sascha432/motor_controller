@@ -65,7 +65,7 @@ void read_eeprom()
     EEPROM.begin();
     EEPROM.get(0, eeprom_data);
     if (eeprom_data.magic == EEPROM_MAGIC) {
-        data.copyFrom(eeprom_data);
+        data = eeprom_data;
         pid.setPidValues(eeprom_data.Kp, eeprom_data.Ki, eeprom_data.Kd);
     }
     // only called once in setup
@@ -81,7 +81,7 @@ void write_eeprom(const __FlashStringHelper *message)
     EEPROMData eeprom_data, eeprom_data_current;
 
     eeprom_data.magic = EEPROM_MAGIC;
-    data.copyTo(eeprom_data);
+    eeprom_data = data;
     pid.getPidValues(eeprom_data.Kp, eeprom_data.Ki, eeprom_data.Kd);
 
     EEPROM.get(0, eeprom_data_current);

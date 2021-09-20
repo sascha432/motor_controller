@@ -745,47 +745,44 @@ public:
         return sizeof(*this);
     }
 
-    bool operator!=(const EEPROMData &data) const {
-        return memcmp(this, &data, size());
-    }
+    bool operator!=(const EEPROMData &data) const;
+    EEPROMData &operator=(const ConfigData &data);
 };
+
+inline bool EEPROMData::operator!=(const EEPROMData &data) const
+{
+    return memcmp(this, &data, size());
+}
 
 class ConfigData {
 public:
     ConfigData();
 
-    void copyTo(EEPROMData &eeprom_data);
-    void copyFrom(const EEPROMData &eeprom_data);
-    void setLedBrightness();
+    ConfigData &operator=(const EEPROMData &data);
 
+    void setLedBrightness();
     void setLedBrightnessNoDelay();
 
     uint8_t getSetPoint() const;
-    uint16_t getSetPointRPM() const {
-        return POTI_TO_RPM(getSetPoint());
-    }
-    uint16_t getSetPointDutyCycle() const {
-        return POTI_TO_DUTY_CYCLE(getSetPoint());
-    }
+    uint16_t getSetPointRPM() const;
+    uint16_t getSetPointDutyCycle() const;
     void setSetPoint(uint8_t value);
     void changeSetPoint(int8_t value);
 
-    void setRpmPerVolt(uint16_t rpmV) {
-        rpm_per_volt = rpmV;
-    }
-    uint16_t getRpmPerVolt() const {
-        return rpm_per_volt;
-    }
+    void setRpmPerVolt(uint16_t rpmV);
+    uint16_t getRpmPerVolt() const;
 
     PidConfigEnum pid_config;
     uint8_t led_brightness;
     uint8_t rpm_sense_average;
 
 private:
+    friend EEPROMData;
+
     uint16_t rpm_per_volt;
-#if HAVE_LED_FADING
-    uint32_t led_fade_timer;
-#endif
+    #if HAVE_LED_FADING
+        uint32_t led_fade_timer;
+    #endif
     uint8_t led_brightness_pwm;
     uint8_t set_point_input_velocity;
     uint8_t set_point_input_pwm;
@@ -794,16 +791,38 @@ private:
 inline void ConfigData::setLedBrightnessNoDelay()
 {
     #if HAVE_LED_FADING
-            led_fade_timer = 0;
-            led_brightness_pwm = led_brightness;
-            if (led_brightness_pwm > 0) {
-                led_brightness_pwm--;
-            } else {
-                led_brightness_pwm++;
-            }
+        led_fade_timer = 0;
+        led_brightness_pwm = led_brightness;
+        if (led_brightness_pwm > 0) {
+            led_brightness_pwm--;
+        }
+        else {
+            led_brightness_pwm++;
+        }
     #endif
     setLedBrightness();
 }
+
+inline uint16_t ConfigData::getSetPointRPM() const
+{
+    return POTI_TO_RPM(getSetPoint());
+}
+
+inline uint16_t ConfigData::getSetPointDutyCycle() const
+{
+    return POTI_TO_DUTY_CYCLE(getSetPoint());
+}
+
+inline void ConfigData::setRpmPerVolt(uint16_t rpmV)
+{
+    rpm_per_volt = rpmV;
+}
+
+inline uint16_t ConfigData::getRpmPerVolt() const
+{
+    return rpm_per_volt;
+}
+
 
 class UIConfigData {
 public:

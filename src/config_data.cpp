@@ -22,20 +22,21 @@ ConfigData::ConfigData() :
 {
 }
 
-void ConfigData::copyTo(EEPROMData &eeprom_data)
+EEPROMData &EEPROMData::operator=(const ConfigData &data)
 {
-    eeprom_data.control_mode = motor.getMode();
-    eeprom_data.set_point_input_velocity = set_point_input_velocity;
-    eeprom_data.set_point_input_pwm = set_point_input_pwm;
-    eeprom_data.led_brightness = led_brightness;
-    eeprom_data.current_limit = current_limit.getLimit();
-    eeprom_data.brake_enabled = motor.isBrakeEnabled();
-    eeprom_data.max_stall_time = motor.getMaxStallTime();
-    eeprom_data.max_pwm = motor.getMaxDutyCycle();
-    eeprom_data.rpm_per_volt = data.getRpmPerVolt();
+    control_mode = motor.getMode();
+    set_point_input_velocity = data.set_point_input_velocity;
+    set_point_input_pwm = data.set_point_input_pwm;
+    led_brightness = data.led_brightness;
+    current_limit = ::current_limit.getLimit();
+    brake_enabled = motor.isBrakeEnabled();
+    max_stall_time = motor.getMaxStallTime();
+    max_pwm = motor.getMaxDutyCycle();
+    rpm_per_volt = data.getRpmPerVolt();
+    return *this;
 }
 
-void ConfigData::copyFrom(const EEPROMData &eeprom_data)
+ConfigData &ConfigData::operator=(const EEPROMData &eeprom_data)
 {
     set_point_input_pwm = eeprom_data.set_point_input_pwm;
     set_point_input_velocity = eeprom_data.set_point_input_velocity;
@@ -47,6 +48,7 @@ void ConfigData::copyFrom(const EEPROMData &eeprom_data)
     motor.setMaxDutyCycle(eeprom_data.max_pwm);
     motor.setMode(eeprom_data.control_mode);
     data.setRpmPerVolt(eeprom_data.rpm_per_volt);
+    return *this;
 }
 
 uint8_t ConfigData::getSetPoint() const
