@@ -81,20 +81,6 @@ inline void Motor::begin()
 {
     setupMotorPwm();
     setupBrake();
-    // bool t=false;
-    // while(true) {
-    //     if (t) {
-    //         setBrakeOn();
-    //     }
-    //     else {
-    //         setBrakeOff();
-    //     }
-    //     Serial.print(t);
-    //     Serial.print(' ');
-    //     Serial.println(isBrakeOn());
-    //     delay(5000);
-    //     t=!t;
-    // }
 }
 
 inline Motor::operator bool() const
@@ -178,7 +164,7 @@ inline void Motor::setBrake(bool state)
     if (state) {
         if (isBrakeEnabled()) {
             #if DEBUG_MOTOR_SPEED
-                Serial.println("set brake high");
+                Serial.printf_P(PSTR("%lu: set brake high\n"), millis());
             #endif
             stopMotorAtomic();
             // wait for the mosfet to be turned off
@@ -188,7 +174,7 @@ inline void Motor::setBrake(bool state)
         }
         else {
             #if DEBUG_MOTOR_SPEED
-                Serial.println("set brake high skipped");
+                Serial.printf_P(PSTR("%lu: set brake high skipped\n"), millis());
             #endif
             stopMotorAtomic();
             setBrakeOff();
@@ -196,7 +182,7 @@ inline void Motor::setBrake(bool state)
     }
     else {
         #if DEBUG_MOTOR_SPEED
-            Serial.println("set brake low");
+            Serial.printf_P(PSTR("%lu: set brake low\n"), millis());
         #endif
         setBrakeOff();
         delayMicroseconds(50);

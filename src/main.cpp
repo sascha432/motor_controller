@@ -260,6 +260,15 @@ void refresh_display()
                 display.setTextSize(2);
                 display.setCursor(0, 5);
                 display_rpm();
+
+                display.setTextSize(1);
+                char buffer[16];
+                PrintBuffer buf(buffer, sizeof(buf));
+                buf.print(adc.getCurrent_A(), 2);
+                buf.print('A');
+                display.setCursor(SCREEN_WIDTH - (strlen(buffer) * FONT_WIDTH), 0);
+                display.print(buffer);
+
                 display_duty_cycle_bar(pid.duty_cycle);
             }
             else {
@@ -290,11 +299,9 @@ void refresh_display()
         }
 
         #if HAVE_CURRENT_LIMIT
-
             if (ui_data.display_current_limit_timer) {
-                uint32_t time;
                 // display for 2 seconds
-                if ((time = get_time_diff(ui_data.display_current_limit_timer, millis())) > 2000) {
+                if (millis() - ui_data.display_current_limit_timer > 2000) {
                     ATOMIC_BLOCK(ATOMIC_FORCEON) {
                         ui_data.display_current_limit_timer = 0;
                     }
@@ -303,7 +310,6 @@ void refresh_display()
                     display_current_limit();
                 }
             }
-
         #endif
 
         display.display();
@@ -950,6 +956,7 @@ void loop() {
                         }
                         else {
                             motor.setBrake(true);
+                            delay(1000);
                         }
                     }
                     break;

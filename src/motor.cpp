@@ -33,7 +33,17 @@ void Motor::loop()
     #endif
 
     // check if the RPM signal has not been updated for a given period of time
-    if (millis() - rpm_sense.getLastSignalMillis() > _maxStallTime) {
+    unsigned long dur;
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+        dur = millis() - rpm_sense._lastSignalMillis;
+    }
+    if (dur > _maxStallTime) {
+        #if DEBUG_MOTOR_SPEED
+            if (motor.isOn()) {
+                Serial.printf_P(PSTR("dur=%lu max=%u\n"), dur, _maxStallTime);
+            }
+        #endif
+
         if (motor.isOn()) {
             stop(MotorStateEnum::STALLED);
         }

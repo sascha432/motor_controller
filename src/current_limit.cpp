@@ -75,7 +75,7 @@ void CurrentLimit::updateLimit()
 {
     analogWriteCurrentLimitPwm(_limit);
     if (_limit == CURRENT_LIMIT_DISABLED) {
-        // set comperator vref to 5V >1000A
+        // set comparator vref to 5V >1000A
         sbi(PIN_CURRENT_LIMIT_OVERRIDE_PORT, PIN_CURRENT_LIMIT_OVERRIDE_BIT);
         sbi(PIN_CURRENT_LIMIT_OVERRIDE_DDR, PIN_CURRENT_LIMIT_OVERRIDE_BIT);
     }

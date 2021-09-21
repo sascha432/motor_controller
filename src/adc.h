@@ -66,9 +66,6 @@ private:
 
 extern ADCInterrupt adc;
 
-//29922
-//30054
-
 inline ADCInterrupt::ADCInterrupt() :
     _analogSource(0),
     _results{}
