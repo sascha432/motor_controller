@@ -25,7 +25,7 @@
 #define HAVE_COMPILED_ON_DATE                   1
 
 #if DEBUG
-#define DEBUG_INPUTS                            1
+#define DEBUG_INPUTS                            0
 #define DEBUG_RPM_SIGNAL                        0
 #define DEBUG_MOTOR_SPEED                       1
 #else
@@ -116,20 +116,23 @@
 #define PIN_MOTOR_PWM_DDR                       DDRB
 #define PIN_MOTOR_PWM_PORT                      PORTB
 #define PIN_MOTOR_PWM_BIT                       PINB3
-#define PIN_MOTOR_PWM_OCR                       OCR1A
-#define PIN_MOTOR_ENABLE_PWM()                  sbi(TCCR1A, COM1A1)
-#define PIN_MOTOR_DISABLE_PWM()                 cbi(TCCR1A, COM1A1)
+#define PIN_MOTOR_PWM_OCR                       OCR2A
+#define PIN_MOTOR_ENABLE_PWM()                  sbi(TCCR2A, COM2A1)
+#define PIN_MOTOR_DISABLE_PWM()                 cbi(TCCR2A, COM2A1)
 
 inline void stopMotor()
 {
     PIN_MOTOR_DISABLE_PWM();
-    asm volatile ("cbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_MOTOR_PWM_PORT)), "I" (PIN_MOTOR_PWM_BIT));
+    asm volatile ("cbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_MOTOR_PWM_PORT)), "I" (PIN_MOTOR_PWM_BIT));     // digital write low
 }
 
 inline void setupMotorPwm()
 {
-    asm volatile ("cbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_MOTOR_PWM_PORT)), "I" (PIN_MOTOR_PWM_BIT));
-    asm volatile ("sbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_MOTOR_PWM_DDR)), "I" (PIN_MOTOR_PWM_BIT));
+    // #if DEBUG_MOTOR_SPEED
+    //     Serial.printf_P(PSTR("timer=%u\n"), digitalPinToTimer(11));
+    // #endif
+    asm volatile ("cbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_MOTOR_PWM_PORT)), "I" (PIN_MOTOR_PWM_BIT));     // digital write low
+    asm volatile ("sbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_MOTOR_PWM_DDR)), "I" (PIN_MOTOR_PWM_BIT));      // pin mode
 }
 
 inline void stopMotorAtomic()
@@ -139,27 +142,34 @@ inline void stopMotorAtomic()
     }
 }
 
-// do not use for 0 or 255
+// do not use for 0 (stopMotor) or 255 (setMotorPWMAtomic)
 // PWM must be enabled
 inline void setMotorPWM_timer(uint8_t pwm)
 {
-    PIN_MOTOR_PWM_OCR = pwm;
+    PIN_MOTOR_PWM_OCR = pwm; // analog write
 }
 
-// do not use for 0
+// use stopMotor() for pwm = 0
 inline void setMotorPWMAtomic(uint8_t pwm)
 {
-#if DEBUG && 0
-    if (pwm == 0) {
-        Serial.println(F("setMotorPWMAtomic(0) called"));
-        for (;;) { delay(1); }
-    }
-#endif
+    #if DEBUG_MOTOR_SPEED
+        if (pwm == 0) {
+            stopMotorAtomic();
+            Serial.println(F("setMotorPWMAtomic(0) called"));
+            for (;;) { delay(1); }
+        }
+    #endif
     ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
         if (pwm == 255) {
             PIN_MOTOR_DISABLE_PWM();
-            asm volatile ("sbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_MOTOR_PWM_PORT)), "I" (PIN_MOTOR_PWM_BIT));
+            asm volatile ("sbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_MOTOR_PWM_PORT)), "I" (PIN_MOTOR_PWM_BIT)); // digital write high
         }
+/*
+        else if (pwm == 0) {
+            PIN_MOTOR_DISABLE_PWM();
+            asm volatile ("cbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_MOTOR_PWM_PORT)), "I" (PIN_MOTOR_PWM_BIT)); // digital write low
+        }
+*/
         else {
             PIN_MOTOR_ENABLE_PWM();
             setMotorPWM_timer(pwm);
@@ -205,8 +215,75 @@ inline void setupBrake()
 // D5/PD5/9
 #define PIN_LED_DIMMER                          5
 
+#define PIN_LED_DIMMER_PWM_PIN                  PIND
+#define PIN_LED_DIMMER_PWM_DDR                  DDRD
+#define PIN_LED_DIMMER_PWM_PORT                 PORTD
+#define PIN_LED_DIMMER_PWM_BIT                  PIND5
+#define PIN_LED_DIMMER_PWM_OCR                  OCR0B
+#define PIN_LED_DIMMER_ENABLE_PWM()             sbi(TCCR0A, COM0B1)
+#define PIN_LED_DIMMER_DISABLE_PWM()            cbi(TCCR0A, COM0B1)
+
+inline void setupLedPwm()
+{
+    // #if 1
+    //     Serial.printf_P(PSTR("timer=%u\n"), digitalPinToTimer(5));
+    // #endif
+    asm volatile ("cbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_LED_DIMMER_PWM_PORT)), "I" (PIN_LED_DIMMER_PWM_BIT));     // digital write low
+    asm volatile ("sbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_LED_DIMMER_PWM_DDR)), "I" (PIN_LED_DIMMER_PWM_BIT));      // pin mode
+}
+
+inline void analogWriteLedPwm(uint8_t pwm)
+{
+    if (pwm == 255) {
+        PIN_LED_DIMMER_DISABLE_PWM();
+        asm volatile ("sbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_LED_DIMMER_PWM_PORT)), "I" (PIN_LED_DIMMER_PWM_BIT));     // digital write high
+    }
+    else if (pwm == 0) {
+        PIN_LED_DIMMER_DISABLE_PWM();
+        asm volatile ("cbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_LED_DIMMER_PWM_PORT)), "I" (PIN_LED_DIMMER_PWM_BIT));     // digital write low
+    }
+    else {
+        PIN_LED_DIMMER_ENABLE_PWM();
+        PIN_LED_DIMMER_PWM_OCR = pwm; // analog write
+    }
+}
+
 // D6/PD6/10
 #define PIN_CURRENT_LIMIT_PWM                   6
+
+#define PIN_CURRENT_LIMIT_PWM_PIN               PIND
+#define PIN_CURRENT_LIMIT_PWM_DDR               DDRD
+#define PIN_CURRENT_LIMIT_PWM_PORT              PORTD
+#define PIN_CURRENT_LIMIT_PWM_BIT               PIND6
+#define PIN_CURRENT_LIMIT_PWM_OCR               OCR0A
+#define PIN_CURRENT_LIMIT_ENABLE_PWM()          sbi(TCCR0A, COM0A1)
+#define PIN_CURRENT_LIMIT_DISABLE_PWM()         cbi(TCCR0A, COM0A1)
+
+inline void setupCurrentLimitPwm()
+{
+    // #if 1
+    //     Serial.printf_P(PSTR("timer=%u\n"), digitalPinToTimer(6));
+    // #endif
+    asm volatile ("sbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_CURRENT_LIMIT_PWM_PORT)), "I" (PIN_CURRENT_LIMIT_PWM_BIT));     // digital write high
+    asm volatile ("sbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_CURRENT_LIMIT_PWM_DDR)), "I" (PIN_CURRENT_LIMIT_PWM_BIT));      // pin mode
+}
+
+inline void analogWriteCurrentLimitPwm(uint8_t pwm)
+{
+    if (pwm == 255) {
+        PIN_CURRENT_LIMIT_DISABLE_PWM();
+        asm volatile ("sbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_CURRENT_LIMIT_PWM_PORT)), "I" (PIN_CURRENT_LIMIT_PWM_BIT));     // digital write high
+    }
+    else if (pwm == 0) {
+        PIN_CURRENT_LIMIT_DISABLE_PWM();
+        asm volatile ("cbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_CURRENT_LIMIT_PWM_PORT)), "I" (PIN_CURRENT_LIMIT_PWM_BIT));     // digital write low
+    }
+    else {
+        PIN_CURRENT_LIMIT_ENABLE_PWM();
+        PIN_CURRENT_LIMIT_PWM_OCR = pwm; // analog write
+    }
+}
+
 
 // A1/PC1/24
 #define PIN_CURRENT_SHUNT                       A1

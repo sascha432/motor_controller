@@ -73,7 +73,7 @@ uint8_t CurrentLimit::getDutyCycle(uint8_t duty_cycle, bool reset)
 
 void CurrentLimit::updateLimit()
 {
-    analogWrite(PIN_CURRENT_LIMIT_PWM, _limit);
+    analogWriteCurrentLimitPwm(_limit);
     if (_limit == CURRENT_LIMIT_DISABLED) {
         // set comperator vref to 5V >1000A
         sbi(PIN_CURRENT_LIMIT_OVERRIDE_PORT, PIN_CURRENT_LIMIT_OVERRIDE_BIT);

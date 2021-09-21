@@ -649,6 +649,9 @@ void setup()
     Serial.begin(115200);
 
     motor.begin();
+    #if HAVE_LED_FADING
+        setupLedPwm();
+    #endif
     current_limit.begin();
 
     pinMode(PIN_LED_DIMMER, OUTPUT);
@@ -1014,8 +1017,8 @@ void loop() {
     #endif
 
 
-    Serial.println(RPM_SENSE_US_TO_RPM(ui_data.display_pulse_length_integral));
-    delay(100);
+    // Serial.println(RPM_SENSE_US_TO_RPM(ui_data.display_pulse_length_integral));
+    // delay(100);
 
     process_ui_events();
     data.setLedBrightness();

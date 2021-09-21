@@ -61,7 +61,7 @@ inline CurrentLimit::CurrentLimit() :
 
 inline void CurrentLimit::begin()
 {
-    analogWrite(PIN_CURRENT_LIMIT_PWM, 255);
+    setupCurrentLimitPwm();
 
     sbi(PIN_CURRENT_LIMIT_OVERRIDE_PORT, PIN_CURRENT_LIMIT_OVERRIDE_BIT);
     sbi(PIN_CURRENT_LIMIT_OVERRIDE_DDR, PIN_CURRENT_LIMIT_OVERRIDE_BIT);
@@ -155,7 +155,7 @@ inline CurrentLimit::CurrentLimit()
 inline void CurrentLimit::begin()
 {
     #ifdef PIN_CURRENT_LIMIT_PWM
-        analogWrite(PIN_CURRENT_LIMIT_PWM, 255);
+        analogWriteCurrentLimitPwm(255);
     #endif
 
     #ifdef PIN_CURRENT_LIMIT_OVERRIDE_PORT

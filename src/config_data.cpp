@@ -85,10 +85,10 @@ void ConfigData::setLedBrightness()
                     led_brightness_pwm--;
                 }
                 if (led_brightness_pwm < LED_MIN_PWM) {
-                    analogWrite(PIN_LED_DIMMER, 0);
+                    analogWriteLedPwm(0);
                 }
                 else {
-                    analogWrite(PIN_LED_DIMMER, led_brightness_pwm);
+                    analogWriteLedPwm(led_brightness_pwm);
                 }
             }
         }
@@ -96,10 +96,10 @@ void ConfigData::setLedBrightness()
         if (led_brightness_pwm != led_brightness) {
             led_brightness_pwm = led_brightness;
             if (led_brightness_pwm < LED_MIN_PWM) {
-                analogWrite(PIN_LED_DIMMER, 0);
+                analogWriteLedPwm(0);
             }
             else {
-                analogWrite(PIN_LED_DIMMER, led_brightness_pwm);
+                analogWriteLedPwm(led_brightness_pwm);
             }
         }
     #endif

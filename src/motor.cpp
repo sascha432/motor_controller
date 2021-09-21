@@ -49,6 +49,9 @@ void Motor::loop()
 void Motor::start()
 {
     if (isBrakeOn()) {
+        #if DEBUG_MOTOR_SPEED
+            Serial.print(F("brake_on"));
+        #endif
         // if the brake is still engaged, for example turning the motor off and on quickly, turn it off, update the display and wait 100ms
         setBrake(false);
         ui_data.refreshDisplay();
@@ -118,6 +121,9 @@ void Motor::stop(MotorStateEnum state)
 void Motor::setSpeed(uint8_t speed)
 {
     if (!isOn() && speed != 0) {
+        #if DEBUG_MOTOR_SPEED
+            Serial.print(F("error_speed"));
+        #endif
         stop(MotorStateEnum::ERROR);
         return;
     }
@@ -129,15 +135,24 @@ void Motor::setSpeed(uint8_t speed)
     }
     if (speed != 0) {
         if (isBrakeOn()) {
+            #if DEBUG_MOTOR_SPEED
+                Serial.print(F("error_brake"));
+            #endif
             stop(MotorStateEnum::ERROR);
             return;
         }
         speed = current_limit.getDutyCycle(speed);
+        #if DEBUG_MOTOR_SPEED
+            Serial.printf_P(PSTR("speed=%u\n"), (int)speed);
+        #endif
         setMotorPWMAtomic(speed);
     }
     else if (speed == 0) {
         ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
             if (isOn()) {
+                #if DEBUG_MOTOR_SPEED
+                    Serial.printf_P(PSTR("set_mode=%u\n"), (int)_mode);
+                #endif
                 _state = MotorStateEnum::OFF;
             }
         }
@@ -167,6 +182,9 @@ void Motor::updateMotorSpeed()
 void Motor::setMode(ControlModeEnum mode)
 {
     if (_state != MotorStateEnum::ON) {
+        #if DEBUG_MOTOR_SPEED
+            Serial.printf_P(PSTR("set_mode=%u\n"), (int)_mode);
+        #endif
         _mode = mode;
         if (isVelocityMode()) {
             rpm_sense.setCallback(update_pid_controller);
