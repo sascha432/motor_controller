@@ -23,17 +23,17 @@ inline void update_duty_cycle()
 
 void Motor::loop()
 {
-#if HAVE_CURRENT_LIMIT
-    if (_startTime) {
-        if (get_time_diff(_startTime, millis()) > CURRENT_LIMIT_DELAY) {
-            current_limit.enable(true);
-            _startTime = 0;
+    #if HAVE_CURRENT_LIMIT
+        if (_startTime) {
+            if (millis() - _startTime > CURRENT_LIMIT_DELAY) {
+                current_limit.enable(true);
+                _startTime = 0;
+            }
         }
-    }
-#endif
+    #endif
 
     // check if the RPM signal has not been updated for a given period of time
-    if (millis() > rpm_sense.getLastSignalMillis() + _maxStallTime) {
+    if (millis() - rpm_sense.getLastSignalMillis() > _maxStallTime) {
         if (motor.isOn()) {
             stop(MotorStateEnum::STALLED);
         }
@@ -52,6 +52,7 @@ void Motor::start()
         // if the brake is still engaged, for example turning the motor off and on quickly, turn it off, update the display and wait 100ms
         setBrake(false);
         ui_data.refreshDisplay();
+        refresh_display();
         delay(100);
 
         // make sure it is off
@@ -63,7 +64,7 @@ void Motor::start()
     current_limit.enable(false);
     ui_data.display_current_limit_timer = 0;
     ATOMIC_BLOCK(ATOMIC_FORCEON) {
-        ui_data = UIConfigData();
+        ui_data = {};
         _state = MotorStateEnum::ON;
         _startTime = millis();
         rpm_sense.reset();
@@ -76,7 +77,8 @@ void Motor::start()
             setSpeed(VELOCITY_START_DUTY_CYCLE);
         }
     }
-    refresh_display();
+    ui_data.refreshDisplay();
+    // refresh_display();
 }
 
 void Motor::stop(MotorStateEnum state)
@@ -86,7 +88,7 @@ void Motor::stop(MotorStateEnum state)
         setSpeed(0);
     }
     // current_limit.enable(false);
-    refresh_display();
+    // refresh_display();
 
     auto message = _F(OFF);
     switch (state) {
@@ -178,6 +180,7 @@ void Motor::setMode(ControlModeEnum mode)
 #if HAVE_GCC_OPTIMIZE_O3
 #    pragma GCC optimize("O3")
 #endif
+
 void Motor::_calcPulseLength()
 {
     auto rpm = data.getSetPointRPM();

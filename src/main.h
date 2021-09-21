@@ -77,13 +77,19 @@
 #define HAVE_CURRENT_LIMIT                      1
 #endif
 
+// display power consumption of the LEDs
+// ~434 byte
+#ifndef HAVE_LED_POWER
+#define HAVE_LED_POWER                          1
+#endif
+
 // flash over current LED to indicate that the device is idling
 // ~200 byte
 #ifndef CURRENT_LIMIT_LED_IDLE_INDICATOR
 #define CURRENT_LIMIT_LED_IDLE_INDICATOR        0
 #endif
 
-// for CURRENT_LIMIT_LED_IDLE_INDICATOR
+#if CURRENT_LIMIT_LED_IDLE_INDICATOR
 
 // flash on/off-time interval
 #define FLASH_ON_TIME                           250
@@ -99,6 +105,8 @@
 #else
 // wait period in milliseconds
 #    define FLASH_WAIT_PERIOD                   15000
+#endif
+
 #endif
 
 // pins
@@ -464,6 +472,7 @@ namespace ADCRef {
     // ADC analog voltage reference
     static constexpr float kReferenceVoltage = 1.1;
 
+    // ADC value to mA/A
     static constexpr float kShuntTomA = (kReferenceVoltage * CURRENT_SHUNT_CALIBRATION * 1000.0 / CURRENT_LIMIT_SHUNT / 1024.0);
     static constexpr float kShuntToA = kShuntTomA / 1000.0;
 
@@ -500,11 +509,6 @@ namespace ADCRef {
 
 #if LED_MIN_PWM < 5
 #error increase min. pwm
-#endif
-
-// display power consumption of the LEDs
-#ifndef HAVE_LED_POWER
-#define HAVE_LED_POWER 1
 #endif
 
 #if HAVE_LED_POWER
@@ -606,7 +610,7 @@ inline float led_power_polynomial_regress(uint8_t pwm)
 #define STALL_TIME_MAX                          5000
 
 // pulse length / RPM
-#define RPM_MIN_PULSE_LENGTH                    RPM_SENSE_US_TO_RPM(RPM_MAX)
+#define RPM_MIN_PULSE_LENGTH                    RPM_SENSE_CURRENT_LIMIT_LED_IDLE_INDICATORUS_TO_RPM(RPM_MAX)
 #define RPM_MAX_PULSE_LENGTH                    RPM_SENSE_US_TO_RPM(RPM_MIN)
 
 // dynamic averaging of the rpm values. 0 to disable
@@ -625,7 +629,7 @@ inline float led_power_polynomial_regress(uint8_t pwm)
 #define TIMER2_PRESCALER                        1
 #define TIMER2_PRESCALER_BV                      _BV(CS20); // 31250Hz
 #define PWM_CYCLE_TICKS                         ((F_CPU / TIMER1_PRESCALER) / PWM_FREQUENCY)
-#define PWM_DUTY_CYCLE_TO_TICKS(duty_cycle)     (duty_cycle * (uint32_t)PWM_CYCLE_TICKS / MAX_DUTY_CYCLE)
+#define PWM_DUTY_CYCLE_TO_TICKS(duty_cycle)     (duty_cycle * static_cast<uint32_t>(PWM_CYCLE_TICKS) / MAX_DUTY_CYCLE)
 
 // limit duty cycle
 #define VELOCITY_START_DUTY_CYCLE               40
@@ -641,18 +645,27 @@ namespace VoltageDetection {
 
 }
 
+inline uint16_t mapValue16(uint16_t value, uint16_t fromMin, uint16_t fromMax, uint16_t toMin, uint16_t toMax)
+{
+    return
+        (value >= fromMax ? toMax : (
+            ((value * static_cast<uint32_t>(toMax - toMin) / (fromMax - fromMin)) + (toMin - (fromMin * static_cast<uint32_t>(toMax - toMin) / (fromMax - fromMin))))
+        ));
+}
+
+#if 0
 #define MAP(value, FROM_MIN, FROM_MAX, TO_MIN, TO_MAX) \
     (value <= FROM_MIN ? TO_MIN : ( \
         (value >= FROM_MAX ? TO_MAX : (  \
-            ((value * (uint32_t)(TO_MAX - TO_MIN) / (FROM_MAX - FROM_MIN)) + (TO_MIN - (FROM_MIN * (uint32_t)(TO_MAX - TO_MIN) / (FROM_MAX - FROM_MIN)))) \
+            ((value * static_cast<uint32_t>(TO_MAX - TO_MIN) / (FROM_MAX - FROM_MIN)) + (TO_MIN - (FROM_MIN * static_cast<uint32_t>(TO_MAX - TO_MIN) / (FROM_MAX - FROM_MIN)))) \
         )) \
     ))
+#endif
 
+#define POTI_TO_RPM(value)                      mapValue16(value, POTI_MIN, POTI_MAX, RPM_MIN, RPM_MAX)
+#define RPM_TO_POTI(value)                      mapValue16(value, RPM_MIN, RPM_MAX, POTI_MIN, POTI_MAX)
 
-#define POTI_TO_RPM(value)                      MAP(value, POTI_MIN, POTI_MAX, RPM_MIN, RPM_MAX)
-#define RPM_TO_POTI(value)                      MAP(value, RPM_MIN, RPM_MAX, POTI_MIN, POTI_MAX)
-
-#define POTI_TO_DUTY_CYCLE(value)               MAP(value, POTI_MIN, POTI_MAX, MIN_DUTY_CYCLE, MAX_DUTY_CYCLE)
+#define POTI_TO_DUTY_CYCLE(value)               mapValue16(value, POTI_MIN, POTI_MAX, MIN_DUTY_CYCLE, MAX_DUTY_CYCLE)
 
 #define EEPROM_MAGIC                            0xf1c9a544
 
@@ -825,7 +838,6 @@ public:
 
     void refreshDisplay();
     void disableRefreshDisplay();
-    bool checkReadKnobTimeout();
     void updateDutyCyle();
     void updateDutyCyle(uint32_t length);
     void updateRpmPulseWidth(uint32_t length);
@@ -836,6 +848,15 @@ public:
     uint16_t display_pulse_length_integral;
     volatile uint32_t display_current_limit_timer;
 };
+
+// inline UIConfigData::UIConfigData() :
+//     refresh_timer(0),
+//     refresh_counter(0),
+//     display_duty_cycle_integral(0),
+//     display_pulse_length_integral(0),
+//     display_current_limit_timer(0)
+// {
+// }
 
 inline void UIConfigData::refreshDisplay()
 {

@@ -68,11 +68,6 @@ void read_eeprom()
         data = eeprom_data;
         pid.setPidValues(eeprom_data.Kp, eeprom_data.Ki, eeprom_data.Kd);
     }
-    // only called once in setup
-    // else {
-    //     data = ConfigData();
-    //     pid.resetPidValues();
-    // }
     EEPROM.end();
 }
 
@@ -460,10 +455,8 @@ void menu_display_submenu()
             case MenuEnum::MENU_MOTOR: {
                     auto rpmV = data.getRpmPerVolt();
                     if (rpmV) {
-                        sprintf_P(message, PSTR("%u rpm/"), rpmV);
-                        if (rpmV < 10000) {
-                            strcat_P(message, PSTR("V"));
-                        }
+                        sprintf_P(message, PSTR("%u rpm/V"), rpmV);
+                        message[10] = 0;
                     }
                     else {
                         strcpy_P(message, _T(DISABLED));
@@ -814,24 +807,28 @@ void loop() {
                     ));
                     break;
             #endif
+#if 1
             case 'i':
                 menu.open();
                 menu.setPosition(MenuEnum::MENU_INFO);
                 menu.enter();
                 break;
-            case 'l': {
-                    if (data.led_brightness < LED_MIN_PWM) {
-                        data.led_brightness = LED_MIN_PWM;
+            #if HAVE_LED_POWER
+                case 'l': {
+                        if (data.led_brightness < LED_MIN_PWM) {
+                            data.led_brightness = LED_MIN_PWM;
+                        }
+                        else if (data.led_brightness == LED_MAX_PWM) {
+                            data.led_brightness = LED_MIN_PWM - 1;
+                        }
+                        else {
+                            data.led_brightness = std::min(data.led_brightness + ((data.led_brightness >= 230) ? 1 : (data.led_brightness >= 200) ? 4 : 16), LED_MAX_PWM);
+                        }
+                        Serial.printf_P(PSTR("led %u pwm %umW\n"), data.led_brightness, LED_POWER_mW(data.led_brightness));
                     }
-                    else if (data.led_brightness == LED_MAX_PWM) {
-                        data.led_brightness = LED_MIN_PWM - 1;
-                    }
-                    else {
-                        data.led_brightness = std::min(data.led_brightness + ((data.led_brightness >= 230) ? 1 : (data.led_brightness >= 200) ? 4 : 16), LED_MAX_PWM);
-                    }
-                    Serial.printf_P(PSTR("led %u pwm %umW\n"), data.led_brightness, LED_POWER_mW(data.led_brightness));
-                }
-                break;
+                    break;
+            #endif
+#endif
 #if 0
             case 'I': {
                 uint16_t minRpm = ~0;
@@ -867,6 +864,7 @@ void loop() {
                 Serial.printf_P(PSTR("rpm/V avg=%u median=%u min=%u max=%u points=%u\n"), (unsigned)(sumRpm / counter), (unsigned)((minRpm + maxRpm) / 2), minRpm, maxRpm, counter);
             } break;
 #endif
+#if 0
             #if HAVE_VOLTAGE_DETECTION
                 case 'v':
                     Serial.print(F("Voltage (V) "));
@@ -905,6 +903,7 @@ void loop() {
                     Serial.println();
                     break;
             #endif
+#endif
 #if 0
             case 'a':
                 data.rpm_sense_average++;
@@ -1013,6 +1012,10 @@ void loop() {
             }
         }
     #endif
+
+
+    Serial.println(RPM_SENSE_US_TO_RPM(ui_data.display_pulse_length_integral));
+    delay(100);
 
     process_ui_events();
     data.setLedBrightness();

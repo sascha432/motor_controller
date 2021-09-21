@@ -22,19 +22,19 @@
 #endif
 
 // convert rpm to pulse length (µs)
-#define RPM_SENSE_RPM_TO_US(rpm) (rpm ? (1000000UL * 60UL / (rpm * (uint32_t)RPM_SENSE_PULSES_PER_TURN)) : 0)
+#define RPM_SENSE_RPM_TO_US(rpm) (rpm ? ((1000000UL * 60UL / RPM_SENSE_PULSES_PER_TURN) / (rpm)) : 0)
 
 // convert RPM pulse length (µs) to RPM
-#define RPM_SENSE_US_TO_RPM(value) ((1000000UL * 60UL / RPM_SENSE_PULSES_PER_TURN) / value)
+#define RPM_SENSE_US_TO_RPM(pulse) ((1000000UL * 60UL / RPM_SENSE_PULSES_PER_TURN) / (pulse))
 
 // convert RPM pulse length (µs) to Hz
-#define RPM_SENSE_US_TO_HZ(value) ((1000000UL / RPM_SENSE_PULSES_PER_TURN) / value)
+#define RPM_SENSE_US_TO_HZ(pulse) ((1000000UL / RPM_SENSE_PULSES_PER_TURN) / (pulse))
 
 // convert RPM pulse length (ticks) to Hz
-#define RPM_SENSE_TICKS_TO_HZ(value) ((1000000UL / RPM_SENSE_PULSES_PER_TURN * TIMER1_TICKS_PER_US) / value)
+#define RPM_SENSE_TICKS_TO_HZ(pulse) ((1000000UL / RPM_SENSE_PULSES_PER_TURN * TIMER1_TICKS_PER_US) / (pulse))
 
 // convert pulse length in µs to kHz
-#define RPM_SENSE_US_TO_KHZ(value) (1e3 / static_cast<float>(value))
+#define RPM_SENSE_US_TO_KHZ(pulse) (1000 / static_cast<float>(pulse))
 
 // if RPM falls below this value, RPM sensing will detect a halt
 #define RPM_SENSE_RPM_MIN std::max(10, (RPM_MIN / 10))
