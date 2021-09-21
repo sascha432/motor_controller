@@ -16,6 +16,7 @@
  - New rotary encoder algorithm with debouncing
  - Interrupt driven free running ADC
  - Replaced analogWrite to reduce code size
+ - Displaying motor current while running
 
 ## 1.0.3
 
