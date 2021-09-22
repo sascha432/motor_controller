@@ -31,6 +31,7 @@ uint8_t CurrentLimit::getDutyCycle(uint8_t duty_cycle, bool reset)
                 if (isCurrentLimitTripped()) {
                     _timer = micros();
                     ui_data.display_current_limit_timer = millis();
+                    setCurrentLimitLedOn();
                     if (motor.isOn()) {
                         ui_data.refresh_timer = ui_data.display_current_limit_timer + 1000;
                     }

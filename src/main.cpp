@@ -367,14 +367,7 @@ void menu_display_submenu()
         display.println(message);
 
         pid.printValues(display);
-        // display.println(message);
 
-        #if HAVE_CURRENT_LIMIT
-            if (!current_limit.isDisabled()) {
-                current_limit_str(message, sizeof(message));
-                display.printf_P(PSTR("Limit %s, "), message);
-            }
-        #endif
         led_brightness_str(message, sizeof(message));
         #if HAVE_LED_POWER
             display.printf_P(PSTR("LED %s %umW\n"), message, LED_POWER_mW(data.led_brightness));
@@ -382,41 +375,21 @@ void menu_display_submenu()
             display.printf_P(PSTR("LED %s\n"), message);
         #endif
 
-        #if HAVE_VOLTAGE_DETECTION && !HAVE_CURRENT_DETECTION
+        #if HAVE_VOLTAGE_DETECTION
             #if HAVE_PRINTF_FLT
-                display.printf_P(PSTR("Input %.2fV\n"), adc.getVoltage_V());
+                display.printf_P(PSTR("Input %.2fV"), adc.getVoltage_V());
             #else
                 display.print(F("Input "));
                 display.print(adc.getVoltage_V(), 2);
-                display.println('V');
-            #endif
-        #elif HAVE_CURRENT_DETECTION && HAVE_VOLTAGE_DETECTION
-            #if HAVE_PRINTF_FLT
-                display.printf_P(PSTR("Input %.2fV %.3fA\n"), adc.getVoltage_V(), adc.getCurrent_A());
-            #else
-                display.print(F("Input "));
-                display.print(adc.getVoltage_V(), 2);
-                display.print(F("V "));
-                display.print(adc.getCurrent_A(), 3);
-                display.println('A');
-            #endif
-        #else
-            #if HAVE_PRINTF_FLT
-                display.printf_P(PSTR("Input %.2fV\n"), adc.getVoltage_V());
-            #else
-                display.print(F("Input "));
-                display.print(adc.getVoltage_V(), 2);
-                display.println('V');
+                display.print('V');
             #endif
         #endif
-
-        // #if HAVE_CURRENT_DETECTION && HAVE_VOLTAGE_DETECTION
-        //     display.print(F("V "));
-        //     display.print(getCurrent() / 1000.0, 3);
-        //     display.println('A');
-        // #else
-        //     display.println('V');
-        // #endif
+        #if HAVE_CURRENT_LIMIT
+            if (!current_limit.isDisabled()) {
+                current_limit_str(message, sizeof(message));
+                display.printf_P(PSTR(" max. %s"), message);
+            }
+        #endif
 
         ui_data.refresh_timer = millis() + 500;
     }
@@ -816,7 +789,7 @@ void loop() {
                     ));
                     break;
             #endif
-#if 1
+#if 0
             case 'i':
                 menu.open();
                 menu.setPosition(MenuEnum::MENU_INFO);
@@ -1022,10 +995,6 @@ void loop() {
             }
         }
     #endif
-
-
-    // Serial.println(RPM_SENSE_US_TO_RPM(ui_data.display_pulse_length_integral));
-    // delay(100);
 
     process_ui_events();
     data.setLedBrightness();

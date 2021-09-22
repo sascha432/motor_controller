@@ -122,7 +122,7 @@ void PidController::update()
         #endif
         previous_error = error;
 
-        duty_cycle = std::clamp<int32_t>(output, MIN_DUTY_CYCLE, MAX_DUTY_CYCLE);
+        duty_cycle = std::clamp<int32_t>(output, MIN_DUTY_CYCLE_PID, MAX_DUTY_CYCLE);
         motor.setSpeed(duty_cycle);
 
         // ui_data.display_duty_cycle_integral = (ui_data.display_duty_cycle_integral * DISPLAY_DUTY_CYCLE_MULTIPLIER + duty_cycle) / (DISPLAY_DUTY_CYCLE_MULTIPLIER + 1);

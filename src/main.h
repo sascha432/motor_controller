@@ -527,6 +527,12 @@ inline void setCurrentLimitLedOn()
 #define CURRENT_SHUNT_CALIBRATION               1.0
 #endif
 
+// due to very low voltages at the ADC, low currents might be rounded down to 0
+// offset in mA to add
+#ifndef CURRENT_SHUNT_OFFSET
+#define CURRENT_SHUNT_OFFSET                    70
+#endif
+
 // calibation value for the voltage detection
 #ifndef VOLTAGE_DETECTION_CALIBRATION
 #define VOLTAGE_DETECTION_CALIBRATION           1.0
@@ -553,11 +559,14 @@ namespace ADCRef {
     static constexpr float kShuntTomA = (kReferenceVoltage * CURRENT_SHUNT_CALIBRATION * 1000.0 / CURRENT_LIMIT_SHUNT / 1024.0);
     static constexpr float kShuntToA = kShuntTomA / 1000.0;
 
+    static constexpr uint16_t kShuntOffsetmA = CURRENT_SHUNT_OFFSET;
+    static constexpr float kShuntOffsetA = CURRENT_SHUNT_OFFSET / 1000.0;
+
 }
 
 // convert ADC value to mA/A
-#define CURRENT_SHUNT_TO_mA(adc, counter)       ((adc) * (ADCRef::kShuntTomA / counter))
-#define CURRENT_SHUNT_TO_A(adc, counter)        ((adc) * (ADCRef::kShuntToA / counter))
+#define CURRENT_SHUNT_TO_mA(adc, counter)       (((adc) * (ADCRef::kShuntTomA / counter)) + ADCRef::kShuntOffsetmA)
+#define CURRENT_SHUNT_TO_A(adc, counter)        (((adc) * (ADCRef::kShuntToA / counter)) + ADCRef::kShuntOffsetA)
 
 // convert PWM to A
 #define CURRENT_LIMIT_DAC_TO_CURRENT(pwm)       (pwm * DAC::kPwmCurrentMultiplier)
@@ -710,7 +719,8 @@ inline float led_power_polynomial_regress(uint8_t pwm)
 
 // limit duty cycle
 #define VELOCITY_START_DUTY_CYCLE               40
-#define MIN_DUTY_CYCLE                          1
+#define MIN_DUTY_CYCLE_PID                      1
+#define MIN_DUTY_CYCLE                          24
 #define MAX_DUTY_CYCLE                          255
 
 namespace VoltageDetection {
