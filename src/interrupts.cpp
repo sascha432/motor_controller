@@ -52,7 +52,7 @@ void check_interrupt_level_change(PinChangedState::ChangeSetIntType change_set)
     #if HAVE_CURRENT_LIMIT
 
         if (lastState.changed<PIN_CURRENT_LIMIT_INDICATOR_PCHS_PORT, PIN_CURRENT_LIMIT_INDICATOR_BIT>(change_set)) {
-            current_limit.pinISR(lastState.get<PIN_CURRENT_LIMIT_INDICATOR_PCHS_PORT>());
+            current_limit.checkCurrentLimit(isCurrentLimitTripped());
         }
 
     #endif
