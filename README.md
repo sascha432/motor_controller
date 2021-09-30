@@ -2,27 +2,44 @@
 
 Firmware for DC motor controller https://easyeda.com/sascha23095123423/dc-motor-controller
 
-I am using this controller for a 500W drill press with a constant RPM from 300-3500rpm load independent
+I am using this controller for a 500W drill press with a constant RPM from 300-9000rpm load independent
 
 * Input voltage 13.5-40V
 * DC Motor controller 20A continuously, 31.25kHz PWM
 * 4A MOSFET driver
-* Velocity mode, constant RPM from 300 to 3500rpm/min
+* Velocity mode, constant RPM from 150 up to 32000rpm
 * PWM mode, duty cycle 5-100% (like regular drills)
 * Opto Interrupter for RPM sensing
 * Adjustable current limit 1-40A
 * Adjustable auto stop if stalled for 250-5000ms
-* Brake function with slow current decay, up to 65A/20ms
+* Brake function with slow current decay, up to 250A/20ms
 * ATmega328P PID controller for constant RPM
 * LED driver 14-26V, 350mA, 10W, dimmable
 * OLED display and rotary encoder, start/stop button
+* Continuous motor current measurement and display (Ampere or Watt)
 * Current limit indicator LED
 
-## New Firmware 1.0.3
+## New Firmware 1.0.4
 
-[Change Log v1.0.3](docs/CHANGELOG.md)
+[Change Log v1.0.4](docs/CHANGELOG.md)
+
+### Current PCB
+
+[Schematics and Gerber Files](schematics/)
+
+[https://oshwlab.com/sascha23095123423/dc-motor-controller](https://oshwlab.com/sascha23095123423/dc-motor-controller)
+[https://oshwlab.com/sascha23095123423/dc-motor-controller-panel](https://oshwlab.com/sascha23095123423/dc-motor-controller-panel)
 
 ### Change Log PCB
+
+### Rev1.4 & Rev1.5
+
+* Motor current measurement
+* BTA24/250A TRIAC for the brake
+* Improved DAC and current limit
+* Improved LED dimmer
+* IDC connector for the control panel (2x5P)
+* JST PH connectors
 
 ### Rev1.3
 
