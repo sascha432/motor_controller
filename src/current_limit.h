@@ -215,7 +215,7 @@ inline void CurrentLimit::_disableTimer()
     TIMSK1 &= ~_BV(OCIE1A);
 }
 
-void CurrentLimit::_resetTimer()
+inline void CurrentLimit::_resetTimer()
 {
     OCR1A = TCNT1 + kCurrentLimitTicks;
 }
@@ -257,6 +257,8 @@ inline void CurrentLimit::timer1CompareMatchA()
             break;
         case CurrentLimitStateEnum::DISABLED:
             _resetDutyCycle();
+            break;
+        default:
             break;
     }
     // reschedule

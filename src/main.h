@@ -27,7 +27,7 @@
 #if DEBUG
 #define DEBUG_INPUTS                            0
 #define DEBUG_RPM_SIGNAL                        0
-#define DEBUG_MOTOR_SPEED                       1
+#define DEBUG_MOTOR_SPEED                       0
 #else
 #define DEBUG_INPUTS                            0
 #define DEBUG_RPM_SIGNAL                        0
