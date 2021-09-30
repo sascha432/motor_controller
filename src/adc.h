@@ -10,6 +10,8 @@
 #include "main.h"
 #include "motor.h"
 
+#define DEBUG_ADC 0
+
 #if HAVE_VOLTAGE_DETECTION && HAVE_CURRENT_DETECTION
 #    define ADC_ANALOG_SOURCES 2
 #elif HAVE_VOLTAGE_DETECTION
@@ -20,15 +22,15 @@
 #    define ADC_ANALOG_SOURCES 0
 #endif
 
-// analog pins to read
-static constexpr uint8_t kADCInterruptAnalogPins[] = {
-    #if HAVE_VOLTAGE_DETECTION
-        (PIN_VOLTAGE - 14),
-    #endif
-    #if HAVE_CURRENT_DETECTION
-        (PIN_CURRENT - 14)
-    #endif
-};
+// trigger modes @ 16MHz
+#define ADC_TRIGGER_MODE_FREE_RUNNING           0           // 9615Hz
+#define ADC_TRIGGER_MODE_TIMER1_COMPARE_MATCH_B 1           // can be configured from ~244-9000Hz
+#define ADC_TRIGGER_MODE_TIMER1_OVERFLOW        2           // 244Hz
+
+// set trigger mode
+#ifndef ADC_TRIGGER_MODE
+#    define ADC_TRIGGER_MODE ADC_TRIGGER_MODE_TIMER1_COMPARE_MATCH_B
+#endif
 
 class ADCInterrupt {
 public:
@@ -36,11 +38,29 @@ public:
     static constexpr uint8_t kAnalogSource = INTERNAL;
     // values of the ADC 0-1023
     static constexpr uint16_t kAdcValues = 1024;
-    // amount of reads before switching to the next pin
-    // the average value is stored
-    static constexpr uint8_t kReadCounter = 63;
-    static_assert(kReadCounter < ((1UL << (sizeof(uint16_t) << 3)) / kAdcValues), "reduce kReadCounter to fit into uint16_t (1024 * kReadCounter <= 0xffffff)");
-    static_assert(kReadCounter < 126, "kReadCounter must be smaller than 126");
+    // amount of readings before switching to the next pin
+    // the first result after switching is discarded
+    static constexpr uint8_t kAverageSampleCount = 1;
+
+    static_assert(kAverageSampleCount >= 1, "kAverageSampleCount must be 1 or greater");
+    static_assert(kAverageSampleCount < ((1UL << (sizeof(uint16_t) << 3)) / kAdcValues), "reduce kAverageSampleCount to fit into uint16_t (kAdcValues * kAverageSampleCount <= 0xffff)");
+
+    #if ADC_TRIGGER_MODE == ADC_TRIGGER_MODE_TIMER1_COMPARE_MATCH_B
+
+        // timer 1 compare match b is the the trigger source for the ADC
+        static constexpr float kTriggerFrequencyHz = 500.0;
+        static constexpr uint32_t kReadIntervalInTicks = ((1000000 / kTriggerFrequencyHz) * TIMER1_TICKS_PER_US);
+        static_assert(kReadIntervalInTicks > 0x077f, "use free running mode for max. read rate");
+        static_assert(kReadIntervalInTicks < 0xffff, "overflow, the timer 1 compare match b is 16 bit and limited to ~244Hz");
+
+    #endif
+
+    // value of the counter to indicate that the analog pin has changed
+    static constexpr int8_t kSkipNextReading = -1;
+
+    static constexpr float kVoltageMultiplier = (1.0 * (VoltageDetection::kDivider * ADCRef::kReferenceVoltage / (kAdcValues * static_cast<float>(kAverageSampleCount))));
+    static constexpr float kCurrentMultiplier = ADCRef::kShuntToA / static_cast<float>(kAverageSampleCount);
+    static constexpr float kPowerMultiplier = kVoltageMultiplier * kCurrentMultiplier;
 
     enum class AnalogPinType : uint8_t {
         #if HAVE_VOLTAGE_DETECTION
@@ -49,40 +69,47 @@ public:
         #if HAVE_CURRENT_DETECTION
             CURRENT,
         #endif
+        MAX
     };
+
+    static constexpr auto kNumChannels = static_cast<uint8_t>(AnalogPinType::MAX);
 
 public:
     ADCInterrupt();
 
-    void setup();
+    void begin();
 
-    uint16_t getVoltage_mV() const;
     float getVoltage_V() const;
-
-    uint16_t getCurrent_mA() const;
     float getCurrent_A() const;
+    float getPower_W() const;
+
+    uint16_t getADCSum(uint8_t channel) const;
+    uint16_t getADCSum(AnalogPinType channel) const;
+    uint16_t getADCAvg(uint8_t channel) const;
+    uint16_t getADCAvg(AnalogPinType channel) const;
 
 public:
     // public for the ISR
     void _selectNextSourcePin();
     void _addValue(uint16_t value);
+    void _resetTimer();
 
     volatile int8_t _counter;
     volatile uint16_t _sum;
     volatile uint8_t _analogSource;
 
 private:
-    union {
-        uint16_t _results[sizeof(kADCInterruptAnalogPins)];
-        struct {
-        #if HAVE_VOLTAGE_DETECTION
-            uint16_t _voltage;
-        #endif
-        #if HAVE_CURRENT_DETECTION
-            uint16_t _current;
-        #endif
-        };
-    };
+    uint16_t _results[kNumChannels];
+
+#if DEBUG_ADC
+public:
+    uint32_t _readCounter{0};
+    void printReadingsPerSecond() {
+        Serial.print(_readCounter);
+        Serial.print(' ');
+        Serial.println(_readCounter / (millis() / 1000.0), 3);
+    }
+#endif
 };
 
 extern ADCInterrupt adc;
@@ -95,32 +122,27 @@ inline ADCInterrupt::ADCInterrupt() :
 
 inline void ADCInterrupt::_selectNextSourcePin()
 {
-    // store previous value
+    // store collected values
     _results[_analogSource] = _sum;
     _sum = 0;
 
-    #if ADC_ANALOG_SOURCES == 1
-        // reset counter
-        _counter = 0;
-    #else
-        // select next source
-        #if HAVE_CURRENT_DETECTION
-            if (motor.isOn()) {
-                // reset counter
-                _counter = 0;
-                // measure current only while motor is running
-                _analogSource = static_cast<uint8_t>(AnalogPinType::CURRENT);
-            }
-            else
-        #endif
-        {
-            // reset counter, skip first reading after switching since it is from the last pin
-            _counter = -1;
-            _analogSource = ((_analogSource + 1) % sizeof(kADCInterruptAnalogPins));
+    // reset counter
+    _counter = kSkipNextReading;
+    #if ADC_ANALOG_SOURCES > 0
+        _analogSource = ((_analogSource + 1) % kNumChannels);
+        switch(_analogSource) {
+            #if HAVE_VOLTAGE_DETECTION
+                case static_cast<uint8_t>(AnalogPinType::VOLTAGE):
+                    ADMUX = (kAnalogSource << 6) | (PIN_VOLTAGE - 14);
+                    break;
+            #endif
+            #if HAVE_CURRENT_DETECTION
+                case static_cast<uint8_t>(AnalogPinType::CURRENT):
+                    ADMUX = (kAnalogSource << 6) | (PIN_CURRENT - 14);
+                    break;
+            #endif
         }
     #endif
-    // analogReference(INTERNAL) for the ADC pin
-    ADMUX = (kAnalogSource << 6) | kADCInterruptAnalogPins[_analogSource];
 }
 
 inline void ADCInterrupt::_addValue(uint16_t value)
@@ -128,12 +150,20 @@ inline void ADCInterrupt::_addValue(uint16_t value)
     _sum += value;
 }
 
-inline void ADCInterrupt::setup()
+inline void ADCInterrupt::_resetTimer()
+{
+    #if ADC_TRIGGER_MODE == ADC_TRIGGER_MODE_TIMER1_COMPARE_MATCH_B
+        OCR1B = TCNT1;
+        OCR1B += kReadIntervalInTicks;
+    #endif
+}
+
+inline void ADCInterrupt::begin()
 {
     ATOMIC_BLOCK(ATOMIC_FORCEON) {
 
         _sum = 0;
-        _analogSource = sizeof(kADCInterruptAnalogPins) - 1;
+        _analogSource = kNumChannels - 1;
         _selectNextSourcePin();
 
         // Set ADEN in ADCSRA to enable the ADC.
@@ -143,42 +173,34 @@ inline void ADCInterrupt::setup()
         // Set ADSC in ADCSRA to start the ADC conversion
         ADCSRA |= _BV(ADEN) | _BV(ADATE) | (_BV(ADPS0) | _BV(ADPS1) | _BV(ADPS2)) | _BV(ADIE) | _BV(ADSC);
 
-        // Clear ADTS2..0 in ADCSRB to set trigger mode to free running.
-        ADCSRB &= ~(_BV(ADTS0) | _BV(ADTS1) | _BV(ADTS2));
+        #if ADC_TRIGGER_MODE == ADC_TRIGGER_MODE_FREE_RUNNING
+            // Clear ADTS2..0 in ADCSRB to set trigger mode to free running
+            ADCSRB &= ~(_BV(ADTS0) | _BV(ADTS1) | _BV(ADTS2));
+        #elif ADC_TRIGGER_MODE == ADC_TRIGGER_MODE_TIMER1_COMPARE_MATCH_B
+            // set ADC trigger source - Timer/Counter1 Compare Match B
+            ADCSRB |= _BV(ADTS2) | _BV(ADTS0);
+            TIMSK1 |= _BV(OCIE1B);
+        #elif ADC_TRIGGER_MODE == ADC_TRIGGER_MODE_TIMER1_OVERFLOW
+            // set ADC trigger source - Timer/Counter1 Overflow
+            ADCSRB |= _BV(ADTS2) | _BV(ADTS1);
+        #endif
 
+        _resetTimer();
     }
 }
 
 #if HAVE_VOLTAGE_DETECTION
 
-    // calculations are done during compile time and this is a simple multiplication (and shifting for mV)
-
-    // inline uint16_t ADCInterrupt::getVoltage_mV() const
-    // {
-    //     constexpr uint8_t kPrecisionShift = 10;
-    //     constexpr uint16_t kMultiplier = ((1000UL << kPrecisionShift) * (VoltageDetection::kDivider * ADCRef::kReferenceVoltage / (kAdcValues * static_cast<float>(kReadCounter))));
-    //     uint16_t voltage;
-    //     ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-    //         voltage = _voltage;
-    //     }
-    //     return (static_cast<uint32_t>(voltage) * kMultiplier) >> kPrecisionShift;
-    // }
-
     inline float ADCInterrupt::getVoltage_V() const
     {
-        constexpr float kMultiplier = (1.0 * (VoltageDetection::kDivider * ADCRef::kReferenceVoltage / (kAdcValues * static_cast<float>(kReadCounter))));
         uint16_t voltage;
         ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-            voltage = _voltage;
+            voltage = getADCSum(AnalogPinType::VOLTAGE);
         }
-        return voltage * kMultiplier;
+        return voltage * kVoltageMultiplier;
     }
 
 #else
-
-    // uint16_t ADCInterrupt::getVoltage_mV() const {
-    //     return 0;
-    // }
 
     float ADCInterrupt::getVoltage_V() const {
         return NAN;
@@ -188,19 +210,6 @@ inline void ADCInterrupt::setup()
 
 #if HAVE_CURRENT_DETECTION
 
-    // calculations are done during compile time and this is a simple multiplication
-
-    // inline uint16_t ADCInterrupt::getCurrent_mA() const
-    // {
-    //     uint16_t current;
-    //     ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-    //         current = _current;
-    //     }
-
-    //     return CURRENT_SHUNT_TO_mA(current, kReadCounter);
-    //     // return CURRENT_SHUNT_TO_mA(current, kReadCounter);
-    // }
-
     inline float ADCInterrupt::getCurrent_A() const
     {
         if (!motor.isOn()) {
@@ -208,18 +217,12 @@ inline void ADCInterrupt::setup()
         }
         uint16_t current;
         ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-            current = _current;
+            current = getADCSum(AnalogPinType::CURRENT);
         }
-        return CURRENT_SHUNT_TO_A(current, kReadCounter);
-        // return CURRENT_SHUNT_TO_mA(current, (kReadCounter / 1000.0));
+        return (current * kCurrentMultiplier) + ADCRef::kShuntOffsetA;
     }
 
 #else
-
-    // uint16_t ADCInterrupt::getCurrent_mA() const
-    // {
-    //     return 0;
-    // }
 
     float ADCInterrupt::getCurrent_A() const
     {
@@ -227,3 +230,48 @@ inline void ADCInterrupt::setup()
     }
 
 #endif
+
+#if HAVE_VOLTAGE_DETECTION && HAVE_CURRENT_DETECTION
+
+inline float ADCInterrupt::getPower_W() const
+{
+    if (!motor.isOn()) {
+        return 0;
+    }
+    uint32_t voltage;
+    uint16_t current;
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+        voltage = getADCSum(AnalogPinType::VOLTAGE);
+        current = getADCSum(AnalogPinType::CURRENT);
+    }
+    return (voltage * current) * kPowerMultiplier;
+}
+
+#else
+
+inline float ADCInterrupt::getPower_W() const
+{
+    return NAN;
+}
+
+#endif
+
+inline uint16_t ADCInterrupt::getADCSum(uint8_t channel) const
+{
+    return _results[channel];
+}
+
+inline uint16_t ADCInterrupt::getADCSum(AnalogPinType channel) const
+{
+    return getADCSum(static_cast<uint8_t>(channel));
+}
+
+inline uint16_t ADCInterrupt::getADCAvg(uint8_t channel) const
+{
+    return getADCSum(channel) / kAverageSampleCount;
+}
+
+inline uint16_t ADCInterrupt::getADCAvg(AnalogPinType channel) const
+{
+    return getADCAvg(static_cast<uint8_t>(channel));
+}

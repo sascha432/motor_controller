@@ -6,18 +6,28 @@
 
 ADCInterrupt adc;
 
-// Interrupt service routine for the ADC completion
-ISR(ADC_vect) {
-    #if ADC_ANALOG_SOURCES > 1
-        if (adc._counter >= 0) {
+ISR(ADC_vect)
+{
+    // if the analog pin has been changed during last ISR, the next result could be from previous pin
+    if (adc._counter != adc.kSkipNextReading) {
+        adc._addValue(ADC);
+    }
+    #if DEBUG_ADC
+        adc._readCounter++;
     #endif
-        // read value
-            adc._addValue(ADC);
-    #if ADC_ANALOG_SOURCES > 1
-        }
-    #endif
+
     // rotate pins
-    if (++adc._counter > adc.kReadCounter) {
+    if (++adc._counter >= adc.kAverageSampleCount) {
         adc._selectNextSourcePin();
     }
+    adc._resetTimer();
 }
+
+
+#if ADC_TRIGGER_MODE == ADC_TRIGGER_MODE_TIMER1_COMPARE_MATCH_B
+
+ISR(TIMER1_COMPB_vect)
+{
+}
+
+#endif
