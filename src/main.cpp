@@ -260,15 +260,6 @@ void refresh_display()
                 display.setTextSize(2);
                 display.setCursor(0, 5);
                 display_rpm();
-
-                display.setTextSize(1);
-                char buffer[16];
-                PrintBuffer buf(buffer, sizeof(buf));
-                buf.print(adc.getCurrent_A(), 2);
-                buf.print('A');
-                display.setCursor(SCREEN_WIDTH - (strlen(buffer) * FONT_WIDTH), 0);
-                display.print(buffer);
-
                 display_duty_cycle_bar(pid.duty_cycle);
             }
             else {
@@ -281,6 +272,46 @@ void refresh_display()
                     display.println('%');
                 #endif
             }
+
+            #if ADC_ANALOG_SOURCES
+                MotorStatusEnum displayStatus;
+                #if HAVE_CURRENT_LIMIT
+                    bool currentLimit;
+                    if (current_limit.isLimitActive()) {
+                        displayStatus = MotorStatusEnum::AMPERE;
+                        currentLimit = true;
+                    }
+                    else {
+                        displayStatus = data.getDisplayMotorStatus();
+                        currentLimit = false;
+                    }
+                #else
+                    display = data.getDisplayMotorStatus();
+                #endif
+
+                if (displayStatus != MotorStatusEnum::OFF) {
+                    display.setTextSize(1);
+                    char buffer[16];
+                    PrintBuffer buf(buffer, sizeof(buf));
+                    float value = adc.getCurrent_A();
+                    char unit = 'A';
+                    if (displayStatus == MotorStatusEnum::WATT) {
+                        value *= adc.getVoltage_V();
+                        unit = 'W';
+                    }
+                    #if HAVE_CURRENT_LIMIT
+                        if (currentLimit) {
+                            display.setTextColor(INVERSE);
+                            buf.print(F("(IL) "));
+                        }
+                    #endif
+                    buf.print(value, value >= 10 ? 1 : 2);
+                    buf.print(unit);
+                    display.setCursor(SCREEN_WIDTH - (strlen(buffer) * FONT_WIDTH), 0);
+                    display.print(buffer);
+                }
+            #endif
+
         }
 
         constexpr uint8_t y = (SCREEN_HEIGHT - (FONT_HEIGHT * 2)) + 2;
@@ -297,20 +328,6 @@ void refresh_display()
             display.setCursor((SCREEN_WIDTH - (3 * FONT_WIDTH * 2)) / 2, y);
             display.print(_F(OFF));
         }
-
-        #if HAVE_CURRENT_LIMIT
-            if (ui_data.display_current_limit_timer) {
-                // display for 2 seconds
-                if (millis() - ui_data.display_current_limit_timer > 2000) {
-                    ATOMIC_BLOCK(ATOMIC_FORCEON) {
-                        ui_data.display_current_limit_timer = 0;
-                    }
-                }
-                else {
-                    display_current_limit();
-                }
-            }
-        #endif
 
         display.display();
     }
@@ -488,10 +505,14 @@ void rotary_button_released(Button& btn, uint16_t duration)
 {
     if (motor.isOn()) {
         // motor running
-        if (motor.isVelocityMode()) {
-            data.pid_config = static_cast<PidConfigEnum>((static_cast<uint8_t>(data.pid_config) + 1) % static_cast<uint8_t>(PidConfigEnum::MAX));
-            ui_data.refreshDisplay();
+        if (duration <= MENU_LONG_PRESS_MILLIS) { // short press?
+            data.toggleDisplayMotorStatus();
         }
+        else if (motor.isVelocityMode()) {
+            data.pid_config = static_cast<PidConfigEnum>((static_cast<uint8_t>(data.pid_config) + 1) % static_cast<uint8_t>(PidConfigEnum::MAX));
+            // ui_data.refreshDisplay();
+        }
+        return;
     }
     else if (menu.isOpen()) {
         // inside menu
@@ -582,7 +603,6 @@ void read_rotary_encoder()
                     else {
                         current_limit.setLimit(std::clamp<int16_t>(new_value, CURRENT_LIMIT_MIN, CURRENT_LIMIT_MAX));
                     }
-                    current_limit.updateLimit();
                     break;
             #endif
             case MenuEnum::MENU_PWM:
@@ -642,9 +662,7 @@ void setup()
         pinMode(PIN_CURRENT, INPUT);
     #endif
     #if HAVE_VOLTAGE_DETECTION || HAVE_CURRENT_DETECTION
-        // it takes a while after setup to get the first values
-        // these are collected during the display initializtation, which takes 750ms (setup_display())
-        adc.setup();
+        adc.begin();
     #endif
 
     button1.onPress(start_stop_button_pressed);
@@ -671,7 +689,7 @@ void setup()
     #endif
     display_message(message, DISPLAY_BOOT_VERSION_TIMEOUT, 1);
 
-    current_limit.enable(true);
+    current_limit.enable();
 
     knob.setAcceleration(KNOB_ACCELERATION);
 }
@@ -846,6 +864,30 @@ void loop() {
                 Serial.printf_P(PSTR("rpm/V avg=%u median=%u min=%u max=%u points=%u\n"), (unsigned)(sumRpm / counter), (unsigned)((minRpm + maxRpm) / 2), minRpm, maxRpm, counter);
             } break;
 #endif
+            #if HAVE_VOLTAGE_DETECTION && HAVE_CURRENT_DETECTION
+                case 'A':
+                    Serial.print(F("ADC "));
+                    Serial_flush_input();
+                    for(uint8_t i = 0; i < 100; i++) {
+                        Serial.print(adc.getVoltage_V(), 3);
+                        Serial.print(' ');
+                        Serial.print(adc.getCurrent_A(), 3);
+                        Serial.print(' ');
+                        Serial.print(adc.getPower_W(), 3);
+                        Serial.print(' ');
+                        Serial.print(adc.getADCAvg(0));
+                        Serial.print(' ');
+                        Serial.print(adc.getADCAvg(1));
+                        Serial.println();
+                        delay(250);
+                        if (Serial.available()) {
+                            Serial_flush_input();
+                            break;
+                        }
+                    }
+                    Serial.println();
+                    break;
+            #endif
 #if 0
             #if HAVE_VOLTAGE_DETECTION
                 case 'v':
@@ -993,6 +1035,12 @@ void loop() {
                     }
                 }
             }
+        }
+    #endif
+
+    #if DEBUG_ADC
+        EVERY_N_MILLIS(1000) {
+            adc.printReadingsPerSecond();
         }
     #endif
 

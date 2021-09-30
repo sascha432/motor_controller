@@ -26,7 +26,7 @@ void Motor::loop()
     #if HAVE_CURRENT_LIMIT
         if (_startTime) {
             if (millis() - _startTime > CURRENT_LIMIT_DELAY) {
-                current_limit.enable(true);
+                current_limit.enable();
                 _startTime = 0;
             }
         }
@@ -74,8 +74,7 @@ void Motor::start()
             return;
         }
     }
-    current_limit.enable(false);
-    ui_data.display_current_limit_timer = 0;
+    current_limit.disable();
     ATOMIC_BLOCK(ATOMIC_FORCEON) {
         ui_data = {};
         _state = MotorStateEnum::ON;
@@ -120,7 +119,7 @@ void Motor::stop(MotorStateEnum state)
     display_message(message, DISPLAY_MENU_TIMEOUT / 2);
     data.pid_config = PidConfigEnum::OFF;
 
-    current_limit.enable(true);
+    current_limit.enable();
 }
 
 #if HAVE_GCC_OPTIMIZE_O3

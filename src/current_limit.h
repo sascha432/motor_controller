@@ -25,20 +25,34 @@ public:
 public:
     CurrentLimit();
 
+    // initialize current limit
     void begin();
 
+    // enable current limit
     void enable();
+
+    // disable current limit
     void disable();
+
+    // get duty cycle with current limit
     uint8_t getDutyCycle(uint8_t duty_cycle);
 
+    // check if the limit is disabled
     bool isDisabled() const;
+
+    // get vref pwm value
     uint8_t getLimit() const;
+
+    // set vref pwm
     void setLimit(uint8_t limit);
 
-#if HAVE_CURRENT_LIMIT
+    // callback for the ISR of the overcurrent pin
+    void checkCurrentLimit(bool isTripped);
 
-    void checkCurrentLimit(bool state);
+    // timer ISR that handles ramping up the duty cycle after over current
     void timer1CompareMatchA();
+
+    // returns true if the limit has been triggered
     bool isLimitActive() const;
 
 private:
@@ -50,11 +64,13 @@ private:
     };
 
     void _resetDutyCycle();
+    void _enableTimer();
+    void _disableTimer();
+    void _resetTimer();
 
     volatile uint8_t _limit;
     volatile uint8_t _limitMultiplier;
     volatile CurrentLimitStateEnum _state;
-#endif
 };
 
 extern CurrentLimit current_limit;
@@ -90,7 +106,7 @@ inline void CurrentLimit::enable()
         setCurrentLimitLedOff();
         _state = (_limit == CURRENT_LIMIT_DISABLED) ? CurrentLimitStateEnum::DISABLED : CurrentLimitStateEnum::NOT_TRIPPED;
         _limitMultiplier = kCurrentLimitMaxMultiplier;
-        TIMSK1 &= ~_BV(OCIE1A);
+        _disableTimer();
     }
 }
 
@@ -100,7 +116,7 @@ inline void CurrentLimit::disable()
         setCurrentLimitLedOff();
         _state = CurrentLimitStateEnum::DISABLED;
         _limitMultiplier = kCurrentLimitMaxMultiplier;
-        TIMSK1 &= ~_BV(OCIE1A);
+        _disableTimer();
     }
 }
 
@@ -177,21 +193,31 @@ inline void CurrentLimit::checkCurrentLimit(bool tripped)
             }
             break;
     }
-    OCR1A = TCNT1 + kCurrentLimitTicks;
-    TIMSK1 |= _BV(OCIE1A);
+    _resetTimer();
+    _enableTimer();
 }
 
 inline void CurrentLimit::_resetDutyCycle()
 {
-    // turn off timer
-    // TIMSK1 &= ~_BV(OCIE1A);
-    // clear state
-    // _state = CurrentLimitStateEnum::NOT_TRIPPED;
-    // _limitMultiplier = kCurrentLimitMaxMultiplier;
     enable();
     if (motor.isOn()) {
         setMotorPWM_timer(getDutyCycle(motor.getDutyCycle()));
     }
+}
+
+inline void CurrentLimit::_enableTimer()
+{
+    TIMSK1 |= _BV(OCIE1A);
+}
+
+inline void CurrentLimit::_disableTimer()
+{
+    TIMSK1 &= ~_BV(OCIE1A);
+}
+
+void CurrentLimit::_resetTimer()
+{
+    OCR1A = TCNT1 + kCurrentLimitTicks;
 }
 
 inline uint8_t CurrentLimit::getDutyCycle(uint8_t duty_cycle)
@@ -224,18 +250,10 @@ inline void CurrentLimit::timer1CompareMatchA()
             }
             break;
         case CurrentLimitStateEnum::SIGNAL_HIGH:
-            if (_limitMultiplier) {
-sei();
-Serial.println("C1");
-            }
             _limitMultiplier = 0;
             if (motor.isOn()) {
                 setMotorPWM_timer(CURRENT_LIMIT_MIN_DUTY_CYCLE);
             }
-            break;
-        case CurrentLimitStateEnum::NOT_TRIPPED:
-            sei();
-            Serial.println("C0");
             break;
         case CurrentLimitStateEnum::DISABLED:
             _resetDutyCycle();
@@ -245,52 +263,49 @@ Serial.println("C1");
     OCR1A = TCNT1 + kCurrentLimitTicks;
 }
 
-// #else
+#else
 
-// inline CurrentLimit::CurrentLimit()
-// {
-// }
+inline CurrentLimit::CurrentLimit()
+{
+}
 
-// inline void CurrentLimit::begin()
-// {
-//     #ifdef PIN_CURRENT_LIMIT_PWM
-//         analogWriteCurrentLimitPwm(255);
-//     #endif
+inline void CurrentLimit::begin()
+{
+    #ifdef PIN_CURRENT_LIMIT_PWM
+        analogWriteCurrentLimitPwm(255);
+    #endif
 
-//     // #ifdef PIN_CURRENT_LIMIT_OVERRIDE_PORT
-//     //     sbi(PIN_CURRENT_LIMIT_OVERRIDE_PORT, PIN_CURRENT_LIMIT_OVERRIDE_BIT);
-//     //     sbi(PIN_CURRENT_LIMIT_OVERRIDE_DDR, PIN_CURRENT_LIMIT_OVERRIDE_BIT);
-//     // #endif
-// }
+    // #ifdef PIN_CURRENT_LIMIT_OVERRIDE_PORT
+    //     sbi(PIN_CURRENT_LIMIT_OVERRIDE_PORT, PIN_CURRENT_LIMIT_OVERRIDE_BIT);
+    //     sbi(PIN_CURRENT_LIMIT_OVERRIDE_DDR, PIN_CURRENT_LIMIT_OVERRIDE_BIT);
+    // #endif
+}
 
-// inline void CurrentLimit::disable()
-// {
-// }
+inline void CurrentLimit::disable()
+{
+}
 
-// inline void CurrentLimit::enable(bool state)
-// {
-// }
+inline void CurrentLimit::enable()
+{
+}
 
-// inline uint8_t CurrentLimit::getDutyCycle(uint8_t duty_cycle, bool reset)
-// {
-// }
+inline uint8_t CurrentLimit::getDutyCycle(uint8_t duty_cycle)
+{
+    return duty_cycle;
+}
 
-// inline bool CurrentLimit::isDisabled() const
-// {
-//     return true;
-// }
+inline bool CurrentLimit::isDisabled() const
+{
+    return true;
+}
 
-// inline uint8_t CurrentLimit::getLimit() const
-// {
-//     return 0;
-// }
+inline uint8_t CurrentLimit::getLimit() const
+{
+    return 0;
+}
 
-// inline void CurrentLimit::setLimit(uint8_t limit)
-// {
-// }
-
-// inline void CurrentLimit::updateLimit()
-// {
-// }
+inline void CurrentLimit::setLimit(uint8_t limit)
+{
+}
 
 #endif

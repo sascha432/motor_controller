@@ -112,6 +112,7 @@
 // pins
 
 // D11/PB3/15
+// pin for the mosfet driver. analogWrite is pretty slow (and adds quite some extra code)
 #define PIN_MOTOR_PWM_PIN                       PINB
 #define PIN_MOTOR_PWM_DDR                       DDRB
 #define PIN_MOTOR_PWM_PORT                      PORTB
@@ -178,6 +179,9 @@ inline void setMotorPWMAtomic(uint8_t pwm)
 }
 
 // D7/PD7/11
+// pin to enable the brake. it basically shorts the motor wires for slow current decay
+// it is important that the mosfets are turned off before the break is engaged + a short delay depending
+// on the mosfet driver. having the mosfets on and the brake engaged will cause a dead short
 #define PIN_BRAKE_PIN                           PIND
 #define PIN_BRAKE_PORT                          PORTD
 #define PIN_BRAKE_DDR                           DDRD
@@ -213,6 +217,7 @@ inline void setupBrake()
 }
 
 // D5/PD5/9
+// pin for the LED dimmer
 #define PIN_LED_DIMMER                          5
 
 #define PIN_LED_DIMMER_PWM_PIN                  PIND
@@ -249,6 +254,7 @@ inline void analogWriteLedPwm(uint8_t pwm)
 }
 
 // D6/PD6/10
+// vref for the comparator and the current limit
 #define PIN_CURRENT_LIMIT_PWM                   6
 
 #define PIN_CURRENT_LIMIT_PWM_PIN               PIND
@@ -261,9 +267,6 @@ inline void analogWriteLedPwm(uint8_t pwm)
 
 inline void setupCurrentLimitPwm()
 {
-    // #if 1
-    //     Serial.printf_P(PSTR("timer=%u\n"), digitalPinToTimer(6));
-    // #endif
     asm volatile ("sbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_CURRENT_LIMIT_PWM_PORT)), "I" (PIN_CURRENT_LIMIT_PWM_BIT));     // digital write high
     asm volatile ("sbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_CURRENT_LIMIT_PWM_DDR)), "I" (PIN_CURRENT_LIMIT_PWM_BIT));      // pin mode
 }
@@ -285,16 +288,15 @@ inline void analogWriteCurrentLimitPwm(uint8_t pwm)
 }
 
 
-// A1/PC1/24
-#define PIN_CURRENT_SHUNT                       A1
-
-// D10/PB2/14
-#define PIN_CURRENT_LIMIT_OVERRIDE_PIN          PINB
-#define PIN_CURRENT_LIMIT_OVERRIDE_PORT         PORTB
-#define PIN_CURRENT_LIMIT_OVERRIDE_DDR          DDRB
-#define PIN_CURRENT_LIMIT_OVERRIDE_BIT          PINB2
+// // D10/PB2/14
+// // pin to disable the current limit
+// #define PIN_CURRENT_LIMIT_OVERRIDE_PIN          PINB
+// #define PIN_CURRENT_LIMIT_OVERRIDE_PORT         PORTB
+// #define PIN_CURRENT_LIMIT_OVERRIDE_DDR          DDRB
+// #define PIN_CURRENT_LIMIT_OVERRIDE_BIT          PINB2
 
 // D12/PB4/MISO
+// signal from comparator when the current limit has been triggered
 #define PIN_CURRENT_LIMIT_INDICATOR_PINNO       12
 #define PIN_CURRENT_LIMIT_INDICATOR_PIN         PINB
 #define PIN_CURRENT_LIMIT_INDICATOR_PORT        PORTB
@@ -305,7 +307,7 @@ inline void analogWriteCurrentLimitPwm(uint8_t pwm)
 inline bool isCurrentLimitTripped()
 {
     asm volatile goto (
-        "sbis %0, %1\n\t"
+        "sbic %0, %1\n\t"
         "rjmp %l[LIMIT]\n\t"
         :: "I" (_SFR_IO_ADDR(PIN_CURRENT_LIMIT_INDICATOR_PIN)), "I" (PIN_CURRENT_LIMIT_INDICATOR_BIT) :: LIMIT
     );
@@ -315,22 +317,33 @@ LIMIT:
     return true;
 }
 
-#define PIN_RPM_SIGNAL                          8           // D8/PB0/12
+// pins that require interrupts
+// its using the pin change ISRs
 
-#define PIN_BUTTON1                             9           // D9/PB1/13
+// D8/PB0/12
+// pin for the LM393 schmitt trigger to read the ITR9608 opto interrupter
+#define PIN_RPM_SIGNAL                          8
+
+// UI interface
+
+// D9/PB1/13
+#define PIN_BUTTON1                             9
 #define PIN_BUTTON1_PORT                        PIN_CHANGED_STATE_PORTB
 #define PIN_BUTTON1_BIT                         PINB1
 
-#define PIN_BUTTON2                             4           // D4/PD4/2
+// D4/PD4/2
+#define PIN_BUTTON2                             4
 #define PIN_BUTTON2_PORT                        PIN_CHANGED_STATE_PORTD
 #define PIN_BUTTON2_BIT                         PIND4
 
-#define PIN_ROTARY_ENC_CLK                      2           // D2/PD2/32
+// D2/PD2/32
+#define PIN_ROTARY_ENC_CLK                      2
 #define PIN_ROTARY_ENC_CLK_PORT                 PIN_CHANGED_STATE_PORTD
 #define PIN_ROTARY_ENC_CLK_BIT                  PIND2
 #define PIN_ROTARY_ENC_CLK_PIN                  PIND
 
-#define PIN_ROTARY_ENC_DT                       3           // D3/PD3/1
+// D3/PD3/1
+#define PIN_ROTARY_ENC_DT                       3
 #define PIN_ROTARY_ENC_DT_PORT                  PIN_CHANGED_STATE_PORTD
 #define PIN_ROTARY_ENC_DT_BIT                   PIND3
 #define PIN_ROTARY_ENC_DT_PIN                   PIND
@@ -497,11 +510,13 @@ extern PinChangedState lastState;
 #pragma pop_macro("PORTD")
 
 // A1/PC1/24
+// indicator LED for over current
 #define PIN_CURRENT_LIMIT_LED_PORT              PORTC
 #define PIN_CURRENT_LIMIT_LED_PIN               PINC
 #define PIN_CURRENT_LIMIT_LED_DDR               DDRC
 #define PIN_CURRENT_LIMIT_LED_BIT               PINC1
 #define PIN_CURRENT_LIMIT_LED_PINNO             A1
+
 
 inline void setCurrentLimitLedOff()
 {
@@ -513,14 +528,25 @@ inline void setCurrentLimitLedOn()
     asm volatile ("sbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_CURRENT_LIMIT_LED_PORT)), "I" (PIN_CURRENT_LIMIT_LED_BIT));
 }
 
+inline void setupCurrentLimitLed()
+{
+    setCurrentLimitLedOff();
+    pinMode(PIN_CURRENT_LIMIT_LED_PINNO, OUTPUT);
+}
+
 // A0/PC0/23
+// ADC input to measure the supply voltage
 #define PIN_VOLTAGE                             A0
 
 // A2/PC2/25
+// ADC input of the shunt voltage to measure the motor current
+// it has an RC filter to get rid of the PWM spikes, no need for software filtering
 #define PIN_CURRENT                             A2
 
 // current shunt value in ohm
+#ifndef CURRENT_LIMIT_SHUNT
 #define CURRENT_LIMIT_SHUNT                     0.008
+#endif
 
 // current shunt calibration
 #ifndef CURRENT_SHUNT_CALIBRATION
@@ -561,21 +587,17 @@ namespace ADCRef {
 
     static constexpr uint16_t kShuntOffsetmA = CURRENT_SHUNT_OFFSET;
     static constexpr float kShuntOffsetA = CURRENT_SHUNT_OFFSET / 1000.0;
-
 }
 
 // convert ADC value to mA/A
-#define CURRENT_SHUNT_TO_mA(adc, counter)       (((adc) * (ADCRef::kShuntTomA / counter)) + ADCRef::kShuntOffsetmA)
-#define CURRENT_SHUNT_TO_A(adc, counter)        (((adc) * (ADCRef::kShuntToA / counter)) + ADCRef::kShuntOffsetA)
+// #define CURRENT_SHUNT_TO_mA(adc, counter)       (((adc) * (ADCRef::kShuntTomA / counter)) + ADCRef::kShuntOffsetmA)
+// #define CURRENT_SHUNT_TO_A(adc, counter)        (((adc) * (ADCRef::kShuntToA / counter)) + ADCRef::kShuntOffsetA)
 
 // convert PWM to A
 #define CURRENT_LIMIT_DAC_TO_CURRENT(pwm)       (pwm * DAC::kPwmCurrentMultiplier)
 
-// after the current limit has been trigger, ramp up the pwm signal slowly. time in microseconds
-#define CURRENT_LIMIT_RAMP_UP_PERIOD            1500
-
 // min. duty cycle after the current limit has been tripped
-#define CURRENT_LIMIT_MIN_DUTY_CYCLE            20
+#define CURRENT_LIMIT_MIN_DUTY_CYCLE            8
 #if CURRENT_LIMIT_MIN_DUTY_CYCLE == 0 || CURRENT_LIMIT_MIN_DUTY_CYCLE == 255
 #error Must not be 0 or 255
 #endif
@@ -589,6 +611,9 @@ namespace ADCRef {
 #define CURRENT_LIMIT_DISABLED                  255
 
 // LED PWM 980Hz for MT3608
+// this is a voltage regulatur, not constant current. the circuit has been modified to provide constant current,
+// but due to the output capacitor the dimming range should be limited to 90-93% PWM. above 90% the current increases
+// pretty non linear. i had best resuts with 120, 180 and 240Hz. lower frequencies provider a better linear dimming curve
 #define LED_MIN_PWM                             32
 #define LED_MAX_PWM                             240     // more than 240 does not increase brightness much for my LEDs
 #define LED_FADE_TIME                           10
@@ -818,6 +843,13 @@ enum class PidConfigEnum : uint8_t {
     MAX
 };
 
+enum class MotorStatusEnum : uint8_t {
+    OFF = 0,
+    AMPERE,
+    WATT,
+    MAX
+};
+
 class ConfigData;
 
 class EEPROMData {
@@ -835,6 +867,7 @@ public:
     float Kd;
     uint8_t max_pwm;
     uint16_t rpm_per_volt;
+    MotorStatusEnum motor_status;
 
     constexpr size_t size() const {
         return sizeof(*this);
@@ -867,6 +900,10 @@ public:
     void setRpmPerVolt(uint16_t rpmV);
     uint16_t getRpmPerVolt() const;
 
+    MotorStatusEnum getDisplayMotorStatus() const;
+    void setDisplayMotorStatus(MotorStatusEnum value);
+    void toggleDisplayMotorStatus();
+
     PidConfigEnum pid_config;
     uint8_t led_brightness;
     uint8_t rpm_sense_average;
@@ -881,6 +918,7 @@ private:
     uint8_t led_brightness_pwm;
     uint8_t set_point_input_velocity;
     uint8_t set_point_input_pwm;
+    MotorStatusEnum motor_status;
 };
 
 inline void ConfigData::setLedBrightnessNoDelay()
@@ -918,6 +956,20 @@ inline uint16_t ConfigData::getRpmPerVolt() const
     return rpm_per_volt;
 }
 
+inline MotorStatusEnum ConfigData::getDisplayMotorStatus() const
+{
+    return motor_status;
+}
+
+inline void ConfigData::setDisplayMotorStatus(MotorStatusEnum value)
+{
+    motor_status = value;
+}
+
+inline void ConfigData::toggleDisplayMotorStatus()
+{
+    motor_status = static_cast<MotorStatusEnum>((static_cast<uint8_t>(motor_status) + 1) % static_cast<uint8_t>(MotorStatusEnum::MAX));
+}
 
 class UIConfigData {
 public:
@@ -933,7 +985,6 @@ public:
     uint16_t refresh_counter;
     uint8_t display_duty_cycle_integral;
     uint16_t display_pulse_length_integral;
-    volatile uint32_t display_current_limit_timer;
 };
 
 // inline UIConfigData::UIConfigData() :
@@ -941,7 +992,6 @@ public:
 //     refresh_counter(0),
 //     display_duty_cycle_integral(0),
 //     display_pulse_length_integral(0),
-//     display_current_limit_timer(0)
 // {
 // }
 

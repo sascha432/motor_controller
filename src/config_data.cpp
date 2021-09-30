@@ -18,7 +18,8 @@ ConfigData::ConfigData() :
     #endif
     led_brightness_pwm(0),
     set_point_input_velocity(RPM_TO_POTI(1000)),
-    set_point_input_pwm(30 * 100 / MAX_DUTY_CYCLE)
+    set_point_input_pwm(30 * 100 / MAX_DUTY_CYCLE),
+    motor_status(MotorStatusEnum::WATT)
 {
 }
 
@@ -33,6 +34,7 @@ EEPROMData &EEPROMData::operator=(const ConfigData &data)
     max_stall_time = motor.getMaxStallTime();
     max_pwm = motor.getMaxDutyCycle();
     rpm_per_volt = data.getRpmPerVolt();
+    motor_status = data.motor_status;
     return *this;
 }
 
@@ -48,6 +50,7 @@ ConfigData &ConfigData::operator=(const EEPROMData &eeprom_data)
     motor.setMaxDutyCycle(eeprom_data.max_pwm);
     motor.setMode(eeprom_data.control_mode);
     data.setRpmPerVolt(eeprom_data.rpm_per_volt);
+    data.motor_status = motor_status;
     return *this;
 }
 

@@ -17,6 +17,7 @@
  - Interrupt driven free running ADC
  - Replaced analogWrite to reduce code size
  - Displaying motor current while running
+ - Option to display Ampere or Watt while running
 
 ## 1.0.3
 

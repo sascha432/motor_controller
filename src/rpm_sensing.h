@@ -94,7 +94,7 @@ inline void UIConfigData::updateRpmPulseWidth(uint32_t length)
     ui_data.display_pulse_length_integral = (ui_data.display_pulse_length_integral * DISPLAY_RPM_MULTIPLIER + length) / static_cast<uint8_t>(DISPLAY_RPM_MULTIPLIER + 1);
 }
 
-inline void RpmSense::_overflowISR()
+inline __attribute__((always_inline)) void RpmSense::_overflowISR()
 {
     _timerOverflow++;
 }
