@@ -7,46 +7,37 @@
 #include "main.h"
 #include <Arduino.h>
 
-// use rising and falling edge for counting RPM
-#ifndef RPM_SENSE_TOGGLE_EDGE
-#    define RPM_SENSE_TOGGLE_EDGE 1
-#endif
+// // convert rpm to pulse length (µs)
+// #define RPM_SENSE_RPM_TO_US(rpm) (rpm ? ((1000000UL * 60UL / RPM_SENSE_PULSES_PER_TURN) / (rpm)) : 0)
 
-#ifndef RPM_SENSE_PULSES_PER_TURN
-// wheel with 120 slots
-#    if RPM_SENSE_TOGGLE_EDGE
-#       define RPM_SENSE_PULSES_PER_TURN (120 * 2)
-#    else
-#       define RPM_SENSE_PULSES_PER_TURN 120
-#    endif
-#endif
+// // convert RPM pulse length (µs) to RPM
+// #define RPM_SENSE_US_TO_RPM(pulse) ((1000000UL * 60UL / RPM_SENSE_PULSES_PER_TURN) / (pulse))
 
-// convert rpm to pulse length (µs)
-#define RPM_SENSE_RPM_TO_US(rpm) (rpm ? ((1000000UL * 60UL / RPM_SENSE_PULSES_PER_TURN) / (rpm)) : 0)
+// // convert RPM pulse length (µs) to Hz
+// #define RPM_SENSE_US_TO_HZ(pulse) ((1000000UL / RPM_SENSE_PULSES_PER_TURN) / (pulse))
 
-// convert RPM pulse length (µs) to RPM
-#define RPM_SENSE_US_TO_RPM(pulse) ((1000000UL * 60UL / RPM_SENSE_PULSES_PER_TURN) / (pulse))
+// // convert RPM pulse length (ticks) to Hz
+// #define RPM_SENSE_TICKS_TO_HZ(pulse) ((1000000UL / RPM_SENSE_PULSES_PER_TURN * Timer1::kTicksPerMicrosecond) / (pulse))
 
-// convert RPM pulse length (µs) to Hz
-#define RPM_SENSE_US_TO_HZ(pulse) ((1000000UL / RPM_SENSE_PULSES_PER_TURN) / (pulse))
-
-// convert RPM pulse length (ticks) to Hz
-#define RPM_SENSE_TICKS_TO_HZ(pulse) ((1000000UL / RPM_SENSE_PULSES_PER_TURN * TIMER1_TICKS_PER_US) / (pulse))
-
-// convert pulse length in µs to kHz
-#define RPM_SENSE_US_TO_KHZ(pulse) (1000 / static_cast<float>(pulse))
+// // convert pulse length in µs to kHz
+// #define RPM_SENSE_US_TO_KHZ(pulse) (1000 / static_cast<float>(pulse))
 
 // if RPM falls below this value, RPM sensing will detect a halt
-#define RPM_SENSE_RPM_MIN std::max(10, (RPM_MIN / 10))
+// #define RPM_SENSE_RPM_MIN std::max(10, (RPM_MIN / 10))
 
-#define RPM_SENSE_RPM_MIN_TICKS (RPM_SENSE_RPM_TO_US(RPM_SENSE_RPM_MIN) * TIMER1_TICKS_PER_US)
+// #define RPM_SENSE_RPM_MIN_TICKS (RPM_SENSE_RPM_TO_US(RPM_SENSE_RPM_MIN) * Timer1::kTicksPerMicrosecond)
 
 // used to calculate RPM_SENSE_IGNORE_SIGNAL_TIME, should be 3x the maximum RPM to detect
-#define RPM_SENSE_RPM_MAX (RPM_MAX * 3)
+// #define RPM_SENSE_RPM_MAX (RPM_MAX * 3)
+
+class PidController;
 
 class RpmSense {
 public:
-    typedef void (*capture_timer_callback_t)();
+    struct Events {
+        uint32_t ticks;
+        uint16_t count;
+    };
 
 public:
     RpmSense();
@@ -54,44 +45,36 @@ public:
     void begin();
     void reset();
 
-    void setCallback(capture_timer_callback_t callback);
-
     void _overflowISR();
     void _captureISR();
 
-    uint32_t getLastSignalMillis();
-    uint24_t getTimerIntegralTicks();
-    uint24_t getTimerIntegralMicros();
-    float getTimerIntegralTicksFloat();
+    uint32_t getLastSignalMillis() const;
+    volatile uint32_t _getLastSignalMillis() const;
+    void setLastSignalMillis(uint32_t millis);
+    int32_t getTimerIntegralTicks() const;
+    volatile int32_t _getTimerIntegralTicks() const;
+    uint16_t getRpm() const;
+
+    Events getEvents();
 
 private:
-    capture_timer_callback_t _callback;
+    friend PidController;
+
     volatile uint16_t _timerOverflow;
     volatile uint32_t _lastTicks;
-    volatile float _ticksIntegral;
-public:
+    volatile uint32_t _ticksIntegral;
     volatile uint32_t _lastSignalMillis;
-private:
-    volatile bool _callbackLocked;
     volatile bool _isrLocked;
     volatile uint8_t _events;
+    volatile uint32_t _ticksSum;
+    volatile uint16_t _eventsSum;
 };
 
 extern RpmSense rpm_sense;
 
-inline void UIConfigData::updateDutyCyle()
+inline uint16_t UIConfigData::getRpm() const
 {
-    updateDutyCyle(rpm_sense.getTimerIntegralMicros());
-}
-
-inline void UIConfigData::updateDutyCyle(uint32_t length)
-{
-    display_pulse_length_integral = (display_pulse_length_integral * DISPLAY_RPM_MULTIPLIER + length) / static_cast<uint8_t>(DISPLAY_RPM_MULTIPLIER + 1);
-}
-
-inline void UIConfigData::updateRpmPulseWidth(uint32_t length)
-{
-    ui_data.display_pulse_length_integral = (ui_data.display_pulse_length_integral * DISPLAY_RPM_MULTIPLIER + length) / static_cast<uint8_t>(DISPLAY_RPM_MULTIPLIER + 1);
+    return RPM_SENSE_TICKS_TO_RPM(display_pulse_length_integral);
 }
 
 inline __attribute__((always_inline)) void RpmSense::_overflowISR()
@@ -99,7 +82,7 @@ inline __attribute__((always_inline)) void RpmSense::_overflowISR()
     _timerOverflow++;
 }
 
-inline uint32_t RpmSense::getLastSignalMillis()
+inline uint32_t RpmSense::getLastSignalMillis() const
 {
     ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
         return _lastSignalMillis;
@@ -107,7 +90,19 @@ inline uint32_t RpmSense::getLastSignalMillis()
     __builtin_unreachable();
 }
 
-inline uint24_t RpmSense::getTimerIntegralTicks()
+volatile inline uint32_t RpmSense::_getLastSignalMillis() const
+{
+    return _lastSignalMillis;
+}
+
+inline void RpmSense::setLastSignalMillis(uint32_t millis)
+{
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+        _lastSignalMillis = millis;
+    }
+}
+
+inline int32_t RpmSense::getTimerIntegralTicks() const
 {
     ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
         return _ticksIntegral;
@@ -115,18 +110,26 @@ inline uint24_t RpmSense::getTimerIntegralTicks()
     __builtin_unreachable();
 }
 
-inline float RpmSense::getTimerIntegralTicksFloat()
+volatile inline int32_t RpmSense::_getTimerIntegralTicks() const
 {
-    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-        return _ticksIntegral;
-    }
-    __builtin_unreachable();
+    return _ticksIntegral;
 }
 
-inline uint24_t RpmSense::getTimerIntegralMicros()
+inline uint16_t RpmSense::getRpm() const
 {
+    return RPM_SENSE_TICKS_TO_RPM(getTimerIntegralTicks());
+}
+
+inline RpmSense::Events RpmSense::getEvents()
+{
+    if (!_eventsSum) {
+        return Events({0, 0});
+    }
     ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-        return _ticksIntegral / TIMER1_TICKS_PER_US;
+        Events tmp = { _ticksSum, _eventsSum };
+        _ticksSum = 0;
+        _eventsSum = 0;
+        return tmp;
     }
     __builtin_unreachable();
 }

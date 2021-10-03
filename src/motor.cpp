@@ -1,68 +1,55 @@
-/**
+    /**
  * Author: sascha_lammers@gmx.de
  */
 
+#include <avr/wdt.h>
 #include "main.h"
 #include "motor.h"
 #include "interrupts.h"
 #include "pid_control.h"
 #include "rpm_sensing.h"
 #include "current_limit.h"
+#include "adc.h"
 
 Motor motor;
 
-inline void update_pid_controller()
-{
-    pid.update();
-}
-
-inline void update_duty_cycle()
-{
-    ui_data.updateDutyCyle();
-}
-
 void Motor::loop()
 {
-    #if HAVE_CURRENT_LIMIT
-        if (_startTime) {
-            if (millis() - _startTime > CURRENT_LIMIT_DELAY) {
-                current_limit.enable();
-                _startTime = 0;
-            }
-        }
-    #endif
+    if (motor.isOn()) {
 
-    // check if the RPM signal has not been updated for a given period of time
-    unsigned long dur;
-    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-        dur = millis() - rpm_sense._lastSignalMillis;
-    }
-    if (dur > _maxStallTime) {
-        #if DEBUG_MOTOR_SPEED
+        // check if the RPM signal has not been updated for a given period of time
+        auto start = rpm_sense.getLastSignalMillis();
+        uint32_t dur = millis() - start;
+        if (dur > _maxStallTime) {
+            #if DEBUG_MOTOR_SPEED
+                if (motor.isOn()) {
+                    Serial.printf_P(PSTR("dur=%lu max=%u\n"), dur, _maxStallTime);
+                }
+            #endif
+
             if (motor.isOn()) {
-                Serial.printf_P(PSTR("dur=%lu max=%u\n"), dur, _maxStallTime);
+                stop(MotorStateEnum::STALLED);
             }
-        #endif
+            else if (isBrakeOn()) { // release brake
+                setBrake(false);
+                if (menu.isClosed()) {
+                    ui_data.refreshDisplay();
+                }
+            }
+        }
 
-        if (motor.isOn()) {
-            stop(MotorStateEnum::STALLED);
-        }
-        else if (isBrakeOn()) { // release brake
-            setBrake(false);
-            if (menu.isClosed()) {
-                ui_data.refreshDisplay();
-            }
-        }
+        wdt_reset();
     }
 }
 
 void Motor::start()
 {
     if (isBrakeOn()) {
+        // if the brake is still engaged, for example when turning the motor off and on quickly
+        // turn the brake off, update the display and wait 100ms
         #if DEBUG_MOTOR_SPEED
             Serial.print(F("brake_on"));
         #endif
-        // if the brake is still engaged, for example turning the motor off and on quickly, turn it off, update the display and wait 100ms
         setBrake(false);
         ui_data.refreshDisplay();
         refresh_display();
@@ -74,59 +61,77 @@ void Motor::start()
             return;
         }
     }
-    current_limit.disable();
+
     ATOMIC_BLOCK(ATOMIC_FORCEON) {
+        // enable WDT to restart in case of a crash while the motor is running
+        wdt_enable(WDTO_1S);
+
+        // reset ui data
         ui_data = {};
         _state = MotorStateEnum::ON;
-        _startTime = millis();
+        _startTime = micros();
+
+        // reset rpm sensing and pid controller
         rpm_sense.reset();
         pid.reset();
+
+        // reset / enable current limit
+        current_limit.enable();
+
+        // set motor speed
         if (isDutyCycleMode()) {
-            updateMotorSpeed();
+            setSpeed(data.getSetPointDutyCycle());
         }
         else {
-            _calcPulseLength();
-            setSpeed(VELOCITY_START_DUTY_CYCLE);
+            #if HAVE_PID_CONTROLLER_STATS
+                pid._stats.start();
+            #endif
+            setSpeed(START_DUTY_CYCLE_PID);
         }
     }
     ui_data.refreshDisplay();
-    // refresh_display();
 }
 
 void Motor::stop(MotorStateEnum state)
 {
+    #if HAVE_PID_CONTROLLER_STATS
+        pid._stats.stop();
+    #endif
+
     ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
         _state = state;
         setSpeed(0);
     }
-    // current_limit.enable(false);
-    // refresh_display();
 
-    auto message = _F(OFF);
+    const __FlashStringHelper *message;
     switch (state) {
-    case MotorStateEnum::ERROR:
-        message = _F(ERROR);
-        break;
-    case MotorStateEnum::STALLED:
-        message = _F(STALLED);
-        break;
-    case MotorStateEnum::BRAKING:
-        message = motor.isBrakeEnabled() ? _F(BRAKING) : _F(OFF);
-        break;
-    default:
-        break;
+        case MotorStateEnum::ERROR:
+            message = F("ERROR");
+            break;
+        case MotorStateEnum::STALLED:
+            message = F("STALLED");
+            break;
+        case MotorStateEnum::OFF:
+            message = F("OFF");
+            break;
+        default:
+            message = motor.isBrakeEnabled() ? F("BRAKING") : F("OFF");
+            break;
     }
     display_message(message, DISPLAY_MENU_TIMEOUT / 2);
-    data.pid_config = PidConfigEnum::OFF;
+    data.pidConfig() = PidConfigEnum::OFF;
 
     current_limit.enable();
+    wdt_disable();
+
+    // #if HAVE_PID_CONTROLLER_STATS
+    //     pid._stats.dumpInfo(Serial);
+    // #endif
 }
 
-#if HAVE_GCC_OPTIMIZE_O3
-#    pragma GCC optimize("O3")
-#endif
 // set PWM duty cycle with enabling/disabling the brake and turning the motor signal led on/off
 // called inside ISR
+// the PID controller does not use this method
 void Motor::setSpeed(uint8_t speed)
 {
     if (!isOn() && speed != 0) {
@@ -138,9 +143,6 @@ void Motor::setSpeed(uint8_t speed)
     }
     if (speed > _maxPWM) {
         speed = _maxPWM;
-    }
-    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-        _dutyCycle = speed;
     }
     if (speed != 0) {
         if (isBrakeOn()) {
@@ -168,59 +170,5 @@ void Motor::setSpeed(uint8_t speed)
         // turns motor off as well
         setBrake(true);
     }
-}
-
-void Motor::updateMotorSpeed()
-{
-    if (isDutyCycleMode()) {
-        #if RPM_SENSE_AVERAGING_FACTOR
-            data.rpm_sense_average = 0;
-        #endif
-        pid.duty_cycle = data.getSetPointDutyCycle();
-        if (isOn()) {
-            setSpeed(pid.duty_cycle);
-        }
-    }
-    else {
-        _calcPulseLength();
-    }
-}
-
-#pragma GCC optimize("Os")
-
-void Motor::setMode(ControlModeEnum mode)
-{
-    if (_state != MotorStateEnum::ON) {
-        #if DEBUG_MOTOR_SPEED
-            Serial.printf_P(PSTR("set_mode=%u\n"), (int)_mode);
-        #endif
-        _mode = mode;
-        if (isVelocityMode()) {
-            rpm_sense.setCallback(update_pid_controller);
-        }
-        else {
-            rpm_sense.setCallback(update_duty_cycle);
-        }
-    }
-}
-
-#if HAVE_GCC_OPTIMIZE_O3
-#    pragma GCC optimize("O3")
-#endif
-
-void Motor::_calcPulseLength()
-{
-    auto rpm = data.getSetPointRPM();
-    pid.set_point_rpm_pulse_length = RPM_SENSE_RPM_TO_US(rpm);
-    #if RPM_SENSE_AVERAGING_FACTOR
-        data.rpm_sense_average = (rpm * (rpm / RPM_SENSE_AVERAGING_FACTOR)) / 30000;
-        // Serial.print("rpm_sense_average ");
-        // Serial.println(data.rpm_sense_average);
-    #endif
-    #if 0
-        Serial.print(rpm);
-        Serial.print(' ');
-        Serial.println(pid.set_point_rpm_pulse_length);
-    #endif
 }
 

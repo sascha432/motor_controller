@@ -11,9 +11,28 @@
 #    pragma GCC optimize("O3")
 #endif
 
+CurrentLimit current_limit;
+
 #if HAVE_CURRENT_LIMIT
 
-CurrentLimit current_limit;
+uint8_t CurrentLimit::_getDutyCycle()
+{
+    if (motor.isVelocityMode()) {
+        return pid.getDutyCycle();
+    }
+    else {
+        return data.getSetPointDutyCycle();
+    }
+}
+
+void CurrentLimit::_resetDutyCycle()
+{
+    enable();
+    if (motor.isOn()) {
+        // restore pwm value if the motor is on
+        setMotorPWM_timer(_getDutyCycle());
+    }
+}
 
 ISR(TIMER1_COMPA_vect)
 {

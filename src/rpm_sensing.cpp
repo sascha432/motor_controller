@@ -3,10 +3,11 @@
  */
 
 #include "rpm_sensing.h"
-#include "DebugBuffer.h"
 #include "helpers.h"
 #include "main.h"
 #include "timer.h"
+#include "motor.h"
+#include "pid_control.h"
 
 #if HAVE_GCC_OPTIMIZE_O3
 #    pragma GCC optimize("O3")
@@ -41,8 +42,10 @@ void RpmSense::reset()
     _events = 0;
     _isrLocked = false;
     // none measured yet
-    _ticksIntegral = NAN;
+    _ticksIntegral = 0;
     _lastSignalMillis = millis();
+    _ticksSum = 0;
+    _eventsSum = 0;
 }
 
 // initialize capture timer for RPM sensing
@@ -59,10 +62,10 @@ void RpmSense::begin()
     reset();
 }
 
-void RpmSense::setCallback(capture_timer_callback_t callback)
-{
-    _callback = callback;
-}
+// void RpmSense::setCallback(capture_timer_callback_t callback)
+// {
+//     _callback = callback;
+// }
 
 #if HAVE_GCC_OPTIMIZE_O3
 #    pragma GCC optimize("O3")
@@ -106,31 +109,30 @@ void RpmSense::_captureISR()
     // add the overflow counter as upper word and the captured counter as lower word
     ticks = (ticks << 16) | counter;
 
-    // Serial.print(ticks);
-    // Serial.print(' ');
-    // Serial.println(events);
-
     // get ticks passed since last interrupt
     uint32_t diff = ticks - _lastTicks;
     if (diff > 0x7fffffffUL) {
         // _timerOverflow not incremented
         diff += 1UL << 16;
     }
-    if (isnan(_ticksIntegral)) {
-        cli();
-        // first interrupt after a reset
-        _ticksIntegral = diff;
+    uint32_t avgDiff = diff / events;
+
+    // update PID controller if enabled
+    if (motor.isVelocityMode() && motor.isOn()) {
+        pid.updateTicks(avgDiff);
     }
-    else if (data.rpm_sense_average == 0) {
-        cli();
-        // no averaging
-        _ticksIntegral = diff;
+
+    cli();
+    // store ticks sum and counter to calculate an average RPM on demand
+    _ticksSum += diff;
+    _eventsSum += events;
+
+    // store last value for PID controller
+    if (_ticksIntegral == 0) {
+        _ticksIntegral = avgDiff;
     }
     else {
-        // avg over data.rpm_sense_average values
-        auto tmp = ((_ticksIntegral * data.rpm_sense_average) + diff) / static_cast<uint8_t>(data.rpm_sense_average + events);
-        cli();
-        _ticksIntegral = tmp;
+        _ticksIntegral = (_ticksIntegral + avgDiff) >> 1;
     }
     _events -= events;
     _lastTicks = ticks;
@@ -139,13 +141,13 @@ void RpmSense::_captureISR()
     _lastSignalMillis = millis();
     _isrLocked = false;
 
-    if (!_callbackLocked) {
-        // allow interrupts and make sure the callback is not called again until done
-        _callbackLocked = true;
-        sei();
-        _callback();
-        cli();
-        _callbackLocked = false;
-    }
+    // if (!_callbackLocked) {
+    //     // allow interrupts and make sure the callback is not called again until done
+    //     _callbackLocked = true;
+    //     sei();
+    //     _callback();
+    //     cli();
+    //     _callbackLocked = false;
+    // }
 }
 

@@ -4,7 +4,6 @@
 
 #pragma once
 
-#include "progmem_strings.h"
 #include <Adafruit_SSD1306.h>
 #include <Arduino.h>
 
@@ -14,14 +13,18 @@
 enum class MenuEnum : uint8_t {
     MENU_SPEED = 0,
     MENU_MODE,
+#if HAVE_LED
     MENU_LED,
+#endif
 #if HAVE_CURRENT_LIMIT
     MENU_CURRENT,
 #endif
     MENU_PWM,
     MENU_STALL,
     MENU_BRAKE,
+#if HAVE_RPM_PER_VOLT
     MENU_MOTOR,
+#endif
     MENU_INFO,
     MENU_RESTORE,
     MENU_EXIT,
@@ -50,6 +53,7 @@ public:
     bool isMainMenuActive() const;
     void open();
     void close();
+    void closeNoRefresh();
 
     void up();
     void down();
@@ -176,6 +180,13 @@ inline bool Menu::isMainMenuActive() const
 
 inline void Menu::close()
 {
+    closeNoRefresh();
+    refresh_display();
+    ui_data.setRefreshTimeoutOnce(500);
+}
+
+inline void Menu::closeNoRefresh()
+{
     _state = MenuState::CLOSED;
 }
 
@@ -216,7 +227,9 @@ inline void Menu::enter()
             knob.setAcceleration(0);
             break;
         case MenuEnum::MENU_STALL:
+    #if HAVE_RPM_PER_VOLT
         case MenuEnum::MENU_MOTOR:
+    #endif
             knob.setAcceleration(255);
             break;
         default:
@@ -256,7 +269,7 @@ inline void Menu::loop()
         (isOpen() && (millis() - _timer >= getTimeout()))
     )) {
         knob.setAcceleration(KNOB_ACCELERATION);
-        close();
+        _state = MenuState::CLOSED;
         _timeout = 0;
         // checks for changes and updates the display
         write_eeprom();

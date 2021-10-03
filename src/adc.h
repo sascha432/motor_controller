@@ -49,7 +49,7 @@ public:
 
         // timer 1 compare match b is the the trigger source for the ADC
         static constexpr float kTriggerFrequencyHz = 500.0;
-        static constexpr uint32_t kReadIntervalInTicks = ((1000000 / kTriggerFrequencyHz) * TIMER1_TICKS_PER_US);
+        static constexpr uint32_t kReadIntervalInTicks = ((1000000 / kTriggerFrequencyHz) * Timer1::kTicksPerMicrosecond);
         static_assert(kReadIntervalInTicks > 0x077f, "use free running mode for max. read rate");
         static_assert(kReadIntervalInTicks < 0xffff, "overflow, the timer 1 compare match b is 16 bit and limited to ~244Hz");
 
@@ -101,6 +101,7 @@ public:
 private:
     uint16_t _results[kNumChannels];
 
+
 #if DEBUG_ADC
 public:
     uint32_t _readCounter{0};
@@ -123,7 +124,8 @@ inline ADCInterrupt::ADCInterrupt() :
 inline void ADCInterrupt::_selectNextSourcePin()
 {
     // store collected values
-    _results[_analogSource] = _sum;
+    auto tmp = _sum;
+    _results[_analogSource] = tmp;
     _sum = 0;
 
     // reset counter

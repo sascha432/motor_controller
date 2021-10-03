@@ -30,6 +30,9 @@ public:
 
     timer_t getTime(timer_t time);
     void start(timer_t time);
+    void stop() {
+        _valid = false;
+    }
 
     inline bool isValid() {
         return getTime() != 0;
@@ -40,44 +43,3 @@ private:
     timer_t _start;
 };
 
-class MicrosTimerMinMaxMean : public MicrosTimer {
-public:
-    MicrosTimerMinMaxMean();
-
-    void integrateTime(timer_t time, int multiplier);
-    void integrateTime(int multiplier);
-
-    void addTime(timer_t time);
-    void addTime();
-
-    inline timer_t getMean() const {
-        return _mean >> 8;
-    }
-
-    inline void setMin(timer_t min) {
-        _min = min;
-    }
-    inline timer_t getMin() const {
-        return _min;
-    }
-
-    inline void setMax(timer_t max) {
-        _max = max;
-    }
-    inline timer_t getMax() const {
-        return _max;
-    }
-
-    void clear();
-    void clearMinMax();
-
-    void printMeanTo(Print &print);
-    void printMinMeanMaxTo(Print &print);
-
-private:
-    timer_t _mean;
-    timer_t _integral;
-    timer_t _min;
-    timer_t _max;
-    unsigned int _count;
-};

@@ -23,11 +23,6 @@ ISR(ADC_vect)
     adc._resetTimer();
 }
 
-
-#if ADC_TRIGGER_MODE == ADC_TRIGGER_MODE_TIMER1_COMPARE_MATCH_B
-
 ISR(TIMER1_COMPB_vect)
 {
 }
-
-#endif

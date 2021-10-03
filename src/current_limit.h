@@ -11,13 +11,15 @@ class CurrentLimit {
 public:
     // interval to ramp up the duty cycle after the current limited had been tripped
     static constexpr uint16_t kCurrentLimitMicros = 128;
-    static constexpr uint16_t kCurrentLimitTicks = TIMER1_TICKS_PER_US * kCurrentLimitMicros;
+    static constexpr uint16_t kCurrentLimitTicks = Timer1::kTicksPerMicrosecond * kCurrentLimitMicros;
 
-    static constexpr uint8_t kCurrentLimitShift = 4;
+    // while the comparator will limit at the set current (measured over 1-2ms depending on the RC filter), the
+    // average current will be less when running into the limit before the PWM has been ramped up again
+    static constexpr uint8_t kCurrentLimitShift = 1;
     static constexpr uint16_t kCurrentLimitSteps = (1 << kCurrentLimitShift);
     static constexpr uint8_t kCurrentLimitMaxMultiplier = kCurrentLimitSteps - 1;
     static_assert(kCurrentLimitSteps <= 256, "limited to 256 steps");
-    static_assert(kCurrentLimitSteps >= 4, "at least 4 steps are required");
+    static_assert(kCurrentLimitSteps >= 2, "at least 2 steps are required");
 
     // total ramp up time in milliseconds
     static constexpr float kCurrentLimitRampupTimeMillis = kCurrentLimitMicros / 1000.0 * kCurrentLimitSteps;
@@ -42,6 +44,7 @@ public:
 
     // get vref pwm value
     uint8_t getLimit() const;
+    float getLimitAmps() const;
 
     // set vref pwm
     void setLimit(uint8_t limit);
@@ -63,6 +66,7 @@ private:
         SIGNAL_LOW
     };
 
+    uint8_t _getDutyCycle();
     void _resetDutyCycle();
     void _enableTimer();
     void _disableTimer();
@@ -128,6 +132,11 @@ inline bool CurrentLimit::isDisabled() const
 inline uint8_t CurrentLimit::getLimit() const
 {
     return _limit;
+}
+
+inline float CurrentLimit::getLimitAmps() const
+{
+    return _limit * DAC::kPwmCurrentMultiplier;
 }
 
 inline void CurrentLimit::setLimit(uint8_t limit)
@@ -197,14 +206,6 @@ inline void CurrentLimit::checkCurrentLimit(bool tripped)
     _enableTimer();
 }
 
-inline void CurrentLimit::_resetDutyCycle()
-{
-    enable();
-    if (motor.isOn()) {
-        setMotorPWM_timer(getDutyCycle(motor.getDutyCycle()));
-    }
-}
-
 inline void CurrentLimit::_enableTimer()
 {
     TIMSK1 |= _BV(OCIE1A);
@@ -228,7 +229,7 @@ inline uint8_t CurrentLimit::getDutyCycle(uint8_t duty_cycle)
     if (_limitMultiplier == kCurrentLimitMaxMultiplier) {
         return duty_cycle;
     }
-    return std::max(CURRENT_LIMIT_MIN_DUTY_CYCLE, (motor.getDutyCycle() * (_limitMultiplier + 1)) >> kCurrentLimitShift);
+    return std::max(CURRENT_LIMIT_MIN_DUTY_CYCLE, (duty_cycle * (_limitMultiplier + 1)) >> kCurrentLimitShift);
 }
 
 inline void CurrentLimit::timer1CompareMatchA()
@@ -237,14 +238,15 @@ inline void CurrentLimit::timer1CompareMatchA()
     switch(_state) {
         case CurrentLimitStateEnum::SIGNAL_LOW:
             if (_limitMultiplier < kCurrentLimitMaxMultiplier) {
-                // increase multiplier until it reaches 255/100%
+                // increase multiplier until it reaches kCurrentLimitMaxMultiplier/100%
                 _limitMultiplier++;
                 if (motor.isOn()) {
-                    setMotorPWM_timer(getDutyCycle(motor.getDutyCycle()));
+                    // set limited current
+                    setMotorPWM_timer(getDutyCycle(_getDutyCycle()));
                 }
             }
             else {
-                // marked as not tripped
+                // marked as not tripped and restore pwm value
                 _resetDutyCycle();
                 return;
             }
@@ -252,6 +254,7 @@ inline void CurrentLimit::timer1CompareMatchA()
         case CurrentLimitStateEnum::SIGNAL_HIGH:
             _limitMultiplier = 0;
             if (motor.isOn()) {
+                // set to min. pwm value
                 setMotorPWM_timer(CURRENT_LIMIT_MIN_DUTY_CYCLE);
             }
             break;
@@ -262,7 +265,7 @@ inline void CurrentLimit::timer1CompareMatchA()
             break;
     }
     // reschedule
-    OCR1A = TCNT1 + kCurrentLimitTicks;
+    _resetTimer();
 }
 
 #else
@@ -283,9 +286,9 @@ inline void CurrentLimit::begin()
     // #endif
 }
 
-inline void CurrentLimit::disable()
-{
-}
+// inline void CurrentLimit::disable()
+// {
+// }
 
 inline void CurrentLimit::enable()
 {
@@ -303,10 +306,20 @@ inline bool CurrentLimit::isDisabled() const
 
 inline uint8_t CurrentLimit::getLimit() const
 {
-    return 0;
+    return 255;
 }
 
 inline void CurrentLimit::setLimit(uint8_t limit)
+{
+}
+
+
+inline uint8_t CurrentLimit::_getDutyCycle()
+{
+    return 0;
+}
+
+inline void CurrentLimit::_resetDutyCycle()
 {
 }
 

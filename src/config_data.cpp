@@ -10,100 +10,90 @@
 
 ConfigData::ConfigData() :
     pid_config(PidConfigEnum::OFF),
-    led_brightness(30 * 255 / LED_MAX_PWM), // 30%
-    rpm_sense_average(0),
-    rpm_per_volt(0),
-    #if HAVE_LED_FADING
-        led_fade_timer(0),
-    #endif
-    led_brightness_pwm(0),
-    set_point_input_velocity(RPM_TO_POTI(1000)),
-    set_point_input_pwm(30 * 100 / MAX_DUTY_CYCLE),
-    motor_status(MotorStatusEnum::WATT)
+    _setPointDutyCycle(30 * 100 / MAX_DUTY_CYCLE),
+    _setPointRpm(1000),
+    _setPointTicks(RPM_SENSE_RPM_TO_TICKS(1000)),
+    _motorStatus(MotorStatusEnum::WATT)
 {
 }
 
 EEPROMData &EEPROMData::operator=(const ConfigData &data)
 {
     control_mode = motor.getMode();
-    set_point_input_velocity = data.set_point_input_velocity;
-    set_point_input_pwm = data.set_point_input_pwm;
-    led_brightness = data.led_brightness;
-    current_limit = ::current_limit.getLimit();
+
+    set_point_rpm = data.getSetPointRPM();
+    set_point_pwm = data.getSetPointDutyCycle();
+    #if HAVE_LED
+        _ledBrightness = data.getLedBrightness();
+    #endif
+    #if HAVE_CURRENT_LIMIT
+        current_limit = ::current_limit.getLimit();
+    #endif
     brake_enabled = motor.isBrakeEnabled();
     max_stall_time = motor.getMaxStallTime();
     max_pwm = motor.getMaxDutyCycle();
-    rpm_per_volt = data.getRpmPerVolt();
-    motor_status = data.motor_status;
+    #if HAVE_RPM_PER_VOLT
+        rpm_per_volt = data.getRpmPerVolt();
+    #endif
+    _motorStatus = data._motorStatus;
     return *this;
 }
 
 ConfigData &ConfigData::operator=(const EEPROMData &eeprom_data)
 {
-    set_point_input_pwm = eeprom_data.set_point_input_pwm;
-    set_point_input_velocity = eeprom_data.set_point_input_velocity;
-    led_brightness = eeprom_data.led_brightness;
-    led_brightness_pwm = 0;
-    current_limit.setLimit(eeprom_data.current_limit);
+    setSetPointDutyCycle(eeprom_data.set_point_pwm);
+    setSetPointRPM(eeprom_data.set_point_rpm);
+    #if HAVE_LED
+        _ledBrightness = eeprom_data._ledBrightness;
+        _ledBrightnessPwm = 0;
+        _ledFadeTimer = 0;
+    #endif
+    #if HAVE_CURRENT_LIMIT
+        current_limit.setLimit(eeprom_data.current_limit);
+    #endif
     motor.setMaxStallTime(eeprom_data.max_stall_time);
     motor.enableBrake(eeprom_data.brake_enabled);
     motor.setMaxDutyCycle(eeprom_data.max_pwm);
     motor.setMode(eeprom_data.control_mode);
-    data.setRpmPerVolt(eeprom_data.rpm_per_volt);
-    data.motor_status = motor_status;
+    #if HAVE_RPM_PER_VOLT
+        data.setRpmPerVolt(eeprom_data.rpm_per_volt);
+    #endif
+    data._motorStatus = _motorStatus;
     return *this;
 }
 
-uint8_t ConfigData::getSetPoint() const
-{
-    return motor.isVelocityMode() ? set_point_input_velocity : set_point_input_pwm;
-}
-
-void ConfigData::setSetPoint(uint8_t value)
+void ConfigData::changeSetPoint(int16_t value)
 {
     if (motor.isVelocityMode()) {
-        set_point_input_velocity = value;
+        setSetPointRPM(getSetPointRPM() + KNOB_GET_VALUE(value, KNOB_VALUE_SPEED));
     }
     else {
-        set_point_input_pwm = value;
+        setSetPointDutyCycle(std::clamp<int16_t>(getSetPointDutyCycle() + KNOB_GET_VALUE(value, KNOB_VALUE_SPEED), MIN_DUTY_CYCLE, MAX_DUTY_CYCLE));
+        if (motor.isOn()) {
+            motor.setSpeed(getSetPointDutyCycle());
+        }
     }
 }
 
-void ConfigData::changeSetPoint(int8_t value)
+bool ConfigData::updateLedBrightness()
 {
-    uint8_t &set_point_input = motor.isVelocityMode() ? set_point_input_velocity : set_point_input_pwm;
-    set_point_input = std::clamp<int16_t>(set_point_input + KNOB_GET_VALUE(value, KNOB_VALUE_SPEED), POTI_MIN, POTI_MAX);
+    if (_ledBrightnessPwm != _ledBrightness) {
+        if (_ledBrightnessPwm < _ledBrightness) {
+            _ledBrightnessPwm++;
+        }
+        else if (_ledBrightnessPwm > _ledBrightness) {
+            _ledBrightnessPwm--;
+        }
+    }
+    analogWriteLedPwm(_ledBrightnessPwm);
+    return _ledBrightnessPwm != _ledBrightness;
 }
 
-void ConfigData::setLedBrightness()
+void ConfigData::loop()
 {
-    #if HAVE_LED_FADING
-        if (millis() - led_fade_timer > LED_FADE_TIME) {
-            led_fade_timer = millis();
-            if (led_brightness_pwm != led_brightness) {
-                if (led_brightness_pwm < led_brightness) {
-                    led_brightness_pwm++;
-                }
-                else if (led_brightness_pwm > led_brightness) {
-                    led_brightness_pwm--;
-                }
-                if (led_brightness_pwm < LED_MIN_PWM) {
-                    analogWriteLedPwm(0);
-                }
-                else {
-                    analogWriteLedPwm(led_brightness_pwm);
-                }
-            }
-        }
-    #else
-        if (led_brightness_pwm != led_brightness) {
-            led_brightness_pwm = led_brightness;
-            if (led_brightness_pwm < LED_MIN_PWM) {
-                analogWriteLedPwm(0);
-            }
-            else {
-                analogWriteLedPwm(led_brightness_pwm);
-            }
-        }
-    #endif
+    auto millis = millis16();
+    if (millis - _ledFadeTimer >= LED_FADE_TIME) {
+        _ledFadeTimer = millis;
+        updateLedBrightness();
+    }
 }

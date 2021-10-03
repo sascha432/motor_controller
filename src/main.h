@@ -7,6 +7,7 @@
 #include <Arduino.h>
 #include <util/atomic.h>
 #include <wiring_private.h>
+#include <avr/wdt.h>
 #include <Button.h>
 #include <ButtonEventCallback.h>
 #include <PushButton.h>
@@ -14,7 +15,6 @@
 #include <Encoder.h>
 #include <Adafruit_SSD1306.h>
 #include "helpers.h"
-#include "progmem_strings.h"
 #include "int24_types.h"
 
 #define VERSION_MAJOR                           1
@@ -22,16 +22,18 @@
 #define VERSION_PATCH                           4
 
 // show at what time and date the firmware was compiled
+#ifndef HAVE_COMPILED_ON_DATE
 #define HAVE_COMPILED_ON_DATE                   1
+#endif
 
 #if DEBUG
 #define DEBUG_INPUTS                            0
-#define DEBUG_RPM_SIGNAL                        0
 #define DEBUG_MOTOR_SPEED                       0
+#define DEBUG_PID_CONTROLLER                    0
 #else
 #define DEBUG_INPUTS                            0
-#define DEBUG_RPM_SIGNAL                        0
 #define DEBUG_MOTOR_SPEED                       0
+#define DEBUG_PID_CONTROLLER                    0
 #endif
 
 // enable serial commands
@@ -40,12 +42,25 @@
 #define HAVE_SERIAL_COMMANDS                    1
 #endif
 
-// 31382-28644
+// enable stats output over serial
+// ~1-2kbyte
+#ifndef HAVE_PID_CONTROLLER_STATS
+#define HAVE_PID_CONTROLLER_STATS               0
+#endif
+
+// disable LED support
+#ifndef HAVE_LED
+#define HAVE_LED                                1
+#endif
 
 // dimming the LED driver is supported
 // ~150 byte
 #ifndef HAVE_LED_FADING
 #define HAVE_LED_FADING                         1
+#endif
+
+#if HAVE_LED_FADING && !HAVE_LED
+#error HAVE_LED_FADING=1 requires HAVE_LED=1
 #endif
 
 // display help for serial commands when pressing ? or h
@@ -73,6 +88,7 @@
 #endif
 
 // have pin that signals overcurrent
+// ~816 byte
 #ifndef HAVE_CURRENT_LIMIT
 #define HAVE_CURRENT_LIMIT                      1
 #endif
@@ -81,32 +97,6 @@
 // ~434 byte
 #ifndef HAVE_LED_POWER
 #define HAVE_LED_POWER                          1
-#endif
-
-// flash over current LED to indicate that the device is idling
-// ~200 byte
-#ifndef CURRENT_LIMIT_LED_IDLE_INDICATOR
-#define CURRENT_LIMIT_LED_IDLE_INDICATOR        0
-#endif
-
-#if CURRENT_LIMIT_LED_IDLE_INDICATOR
-
-// flash on/off-time interval
-#define FLASH_ON_TIME                           250
-// number of subsequent flashes
-#define FLASH_NUM_TIMES                         3
-// mask to decrease counter, use 0 to disable it
-// set FLASH_WAIT_PERIOD in milliseconds if the mask is disabled
-#define FLASH_COUNTER_MASK                      ((1 << 6) - 1)
-// time between flashing the LED n times
-#if FLASH_COUNTER_MASK != 0
-// wait for counter overflow, FLASH_COUNTER_MASK * FLASH_ON_TIME milliseconds
-#    define FLASH_WAIT_PERIOD                   ((0xff & FLASH_COUNTER_MASK) * FLASH_ON_TIME)
-#else
-// wait period in milliseconds
-#    define FLASH_WAIT_PERIOD                   15000
-#endif
-
 #endif
 
 // pins
@@ -124,6 +114,7 @@
 inline void stopMotor()
 {
     PIN_MOTOR_DISABLE_PWM();
+    PIN_MOTOR_PWM_OCR = 0;
     asm volatile ("cbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_MOTOR_PWM_PORT)), "I" (PIN_MOTOR_PWM_BIT));     // digital write low
 }
 
@@ -134,6 +125,7 @@ inline void setupMotorPwm()
     // #endif
     asm volatile ("cbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_MOTOR_PWM_PORT)), "I" (PIN_MOTOR_PWM_BIT));     // digital write low
     asm volatile ("sbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_MOTOR_PWM_DDR)), "I" (PIN_MOTOR_PWM_BIT));      // pin mode
+    PIN_MOTOR_PWM_OCR = 0;
 }
 
 inline void stopMotorAtomic()
@@ -150,33 +142,36 @@ inline void setMotorPWM_timer(uint8_t pwm)
     PIN_MOTOR_PWM_OCR = pwm; // analog write
 }
 
-// use stopMotor() for pwm = 0
-inline void setMotorPWMAtomic(uint8_t pwm)
+// returns 0 if the motor is off and 255 if running at 100% duty cycle
+inline uint8_t getMotorPWM_timer()
 {
-    #if DEBUG_MOTOR_SPEED
-        if (pwm == 0) {
-            stopMotorAtomic();
-            Serial.println(F("setMotorPWMAtomic(0) called"));
-            for (;;) { delay(1); }
-        }
-    #endif
-    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-        if (pwm == 255) {
-            PIN_MOTOR_DISABLE_PWM();
-            asm volatile ("sbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_MOTOR_PWM_PORT)), "I" (PIN_MOTOR_PWM_BIT)); // digital write high
-        }
-/*
-        else if (pwm == 0) {
-            PIN_MOTOR_DISABLE_PWM();
-            asm volatile ("cbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_MOTOR_PWM_PORT)), "I" (PIN_MOTOR_PWM_BIT)); // digital write low
-        }
-*/
-        else {
-            PIN_MOTOR_ENABLE_PWM();
-            setMotorPWM_timer(pwm);
-        }
+    return PIN_MOTOR_PWM_OCR;
+}
+
+// use stopMotor() for pwm = 0
+inline void setMotorPWM(uint8_t pwm)
+{
+    if (pwm == 0) {
+        stopMotor();
+    }
+    else if (pwm == 255) {
+        PIN_MOTOR_DISABLE_PWM();
+        PIN_MOTOR_PWM_OCR = 255;
+        asm volatile ("sbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_MOTOR_PWM_PORT)), "I" (PIN_MOTOR_PWM_BIT)); // digital write high
+    }
+    else {
+        setMotorPWM_timer(pwm);
+        PIN_MOTOR_ENABLE_PWM();
     }
 }
+
+inline void setMotorPWMAtomic(uint8_t pwm)
+{
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+        setMotorPWM(pwm);
+    }
+}
+
 
 // D7/PD7/11
 // pin to enable the brake. it basically shorts the motor wires for slow current decay
@@ -218,6 +213,7 @@ inline void setupBrake()
 
 // D5/PD5/9
 // pin for the LED dimmer
+// -1 to disable
 #define PIN_LED_DIMMER                          5
 
 #define PIN_LED_DIMMER_PWM_PIN                  PIND
@@ -230,12 +226,26 @@ inline void setupBrake()
 
 inline void setupLedPwm()
 {
-    // #if 1
-    //     Serial.printf_P(PSTR("timer=%u\n"), digitalPinToTimer(5));
-    // #endif
-    asm volatile ("cbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_LED_DIMMER_PWM_PORT)), "I" (PIN_LED_DIMMER_PWM_BIT));     // digital write low
-    asm volatile ("sbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_LED_DIMMER_PWM_DDR)), "I" (PIN_LED_DIMMER_PWM_BIT));      // pin mode
+    // setup pin even without LED support since it has pullup
+    #if PIN_LED_DIMMER != -1
+        asm volatile ("cbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_LED_DIMMER_PWM_PORT)), "I" (PIN_LED_DIMMER_PWM_BIT));     // digital write low
+        asm volatile ("sbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_LED_DIMMER_PWM_DDR)), "I" (PIN_LED_DIMMER_PWM_BIT));      // pin mode
+    #endif
 }
+
+#if HAVE_LED
+
+// LED PWM 980Hz for MT3608
+// this is a voltage regulatur, not constant current. the circuit has been modified to provide constant current,
+// but due to the output capacitor the dimming range should be limited to 90-93% PWM. above 90% the current increases
+// pretty non linear. i had best resuts with 120, 180 and 240Hz. lower frequencies provider a better linear dimming curve
+#define LED_MIN_PWM                             32
+#define LED_MAX_PWM                             240     // more than 240 does not increase brightness much for my LEDs
+#define LED_FADE_TIME                           10
+
+#if LED_MIN_PWM < 5
+#error increase min. pwm
+#endif
 
 inline void analogWriteLedPwm(uint8_t pwm)
 {
@@ -243,7 +253,7 @@ inline void analogWriteLedPwm(uint8_t pwm)
         PIN_LED_DIMMER_DISABLE_PWM();
         asm volatile ("sbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_LED_DIMMER_PWM_PORT)), "I" (PIN_LED_DIMMER_PWM_BIT));     // digital write high
     }
-    else if (pwm == 0) {
+    else if (pwm < LED_MIN_PWM) {
         PIN_LED_DIMMER_DISABLE_PWM();
         asm volatile ("cbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_LED_DIMMER_PWM_PORT)), "I" (PIN_LED_DIMMER_PWM_BIT));     // digital write low
     }
@@ -252,6 +262,9 @@ inline void analogWriteLedPwm(uint8_t pwm)
         PIN_LED_DIMMER_PWM_OCR = pwm; // analog write
     }
 }
+
+#endif
+
 
 // D6/PD6/10
 // vref for the comparator and the current limit
@@ -286,7 +299,6 @@ inline void analogWriteCurrentLimitPwm(uint8_t pwm)
         PIN_CURRENT_LIMIT_PWM_OCR = pwm; // analog write
     }
 }
-
 
 // // D10/PB2/14
 // // pin to disable the current limit
@@ -589,38 +601,15 @@ namespace ADCRef {
     static constexpr float kShuntOffsetA = CURRENT_SHUNT_OFFSET / 1000.0;
 }
 
-// convert ADC value to mA/A
-// #define CURRENT_SHUNT_TO_mA(adc, counter)       (((adc) * (ADCRef::kShuntTomA / counter)) + ADCRef::kShuntOffsetmA)
-// #define CURRENT_SHUNT_TO_A(adc, counter)        (((adc) * (ADCRef::kShuntToA / counter)) + ADCRef::kShuntOffsetA)
-
-// convert PWM to A
-#define CURRENT_LIMIT_DAC_TO_CURRENT(pwm)       (pwm * DAC::kPwmCurrentMultiplier)
-
 // min. duty cycle after the current limit has been tripped
 #define CURRENT_LIMIT_MIN_DUTY_CYCLE            8
 #if CURRENT_LIMIT_MIN_DUTY_CYCLE == 0 || CURRENT_LIMIT_MIN_DUTY_CYCLE == 255
 #error Must not be 0 or 255
 #endif
-
-// delay after starting the motor in milliseconds
-#define CURRENT_LIMIT_DELAY                     500
-
 // current limit settings value
 #define CURRENT_LIMIT_MIN                       3           // ~0.63A
 #define CURRENT_LIMIT_MAX                       224         // ~35A
 #define CURRENT_LIMIT_DISABLED                  255
-
-// LED PWM 980Hz for MT3608
-// this is a voltage regulatur, not constant current. the circuit has been modified to provide constant current,
-// but due to the output capacitor the dimming range should be limited to 90-93% PWM. above 90% the current increases
-// pretty non linear. i had best resuts with 120, 180 and 240Hz. lower frequencies provider a better linear dimming curve
-#define LED_MIN_PWM                             32
-#define LED_MAX_PWM                             240     // more than 240 does not increase brightness much for my LEDs
-#define LED_FADE_TIME                           10
-
-#if LED_MIN_PWM < 5
-#error increase min. pwm
-#endif
 
 #if HAVE_LED_POWER
 
@@ -691,62 +680,96 @@ inline float led_power_polynomial_regress(uint8_t pwm)
 #define KNOB_TOGGLE_SPEDD                       (256L * KNOB_INVERTED)
 // negative to invert changing values
 #define KNOB_VALUE_SPEED                        (256L * KNOB_INVERTED)
+// negative to invert changing pid controller values
+#define KNOB_PID_SPEED                          (64L * KNOB_INVERTED)
 
 #define KNOB_GET_VALUE(value, speed)            menu.getKnobValue(value, speed, 1)
 
 #define MENU_LONG_PRESS_MILLIS                  450
 
-// poti
-#define POTI_MIN                                0
-#define POTI_MAX                                255
-#define POTI_RANGE                              POTI_MAX
-#define POTI_VALUE(value)                       value
-// #define POTI_MAX                                1023
-// #define POTI_RANGE                              (POTI_MAX - POTI_MIN)
-// #define POTI_VALUE(value)                       (value <= POTI_MIN ? POTI_MIN : (value >= POTI_MAX ? POTI_MAX : value - POTI_MIN))
-
 #define DISPLAY_MENU_TIMEOUT                    7500
 #define DISPLAY_SAVED_TIMEOUT                   1250
 #define DISPLAY_BOOT_VERSION_TIMEOUT            1000
-#define DISPLAY_REFRESH_TIME                    100
+#define DISPLAY_REFRESH_TIME                    125
 
-#define DISPLAY_RPM_MULTIPLIER                  50UL
-#define DISPLAY_DUTY_CYCLE_MULTIPLIER           10UL
-
-// min. and mx. RPM that can be selected
+// min. and max. RPM that can be selected in the UI
 #define RPM_MIN                                 150
 #define RPM_MAX                                 4500
 
 #define STALL_TIME_MIN                          250
 #define STALL_TIME_MAX                          5000
 
-// pulse length / RPM
-#define RPM_MIN_PULSE_LENGTH                    RPM_SENSE_CURRENT_LIMIT_LED_IDLE_INDICATORUS_TO_RPM(RPM_MAX)
-#define RPM_MAX_PULSE_LENGTH                    RPM_SENSE_US_TO_RPM(RPM_MIN)
-
-// dynamic averaging of the rpm values. 0 to disable
-// in case a 3D printed sensor is used and the pulses are not 100% even, this will
-// help to improve the reponse of the PID controller with low RPMs and make it
-// more smooth with high RPMs. can be tuned while the motor is running using the
-// serial console and HAVE_SERIAL_COMMANDS (key a/s)
-#define RPM_SENSE_AVERAGING_FACTOR              8
-
 // RPM sensing
 #define TIMER1_PRESCALER                        1
 #define TIMER1_PRESCALER_BV                     _BV(CS10)
-#define TIMER1_TICKS_PER_US                     (F_CPU / TIMER1_PRESCALER / 1000000.0)
 
 // motor PWM
 #define TIMER2_PRESCALER                        1
 #define TIMER2_PRESCALER_BV                      _BV(CS20); // 31250Hz
-#define PWM_CYCLE_TICKS                         ((F_CPU / TIMER1_PRESCALER) / PWM_FREQUENCY)
-#define PWM_DUTY_CYCLE_TO_TICKS(duty_cycle)     (duty_cycle * static_cast<uint32_t>(PWM_CYCLE_TICKS) / MAX_DUTY_CYCLE)
+// #define PWM_CYCLE_TICKS                         ((F_CPU / TIMER1_PRESCALER) / PWM_FREQUENCY)
+// #define PWM_DUTY_CYCLE_TO_TICKS(duty_cycle)     (duty_cycle * static_cast<uint32_t>(PWM_CYCLE_TICKS) / (MAX_DUTY_CYCLE)
+
+namespace Timer1 {
+
+    static constexpr uint8_t kPreScaler = TIMER1_PRESCALER;
+    static constexpr float kTicksPerMicrosecond = F_CPU / kPreScaler / 1000000.0;
+    static constexpr uint32_t kTicksPerMinute = F_CPU * 60.0 / kPreScaler;
+
+}
+
+namespace Timer2 {
+
+    static constexpr uint8_t kPreScaler = TIMER2_PRESCALER;
+    static constexpr float kTicksPerMicrosecond = F_CPU / kPreScaler / 1000000.0;
+    static constexpr uint32_t kTicksPerMinute = F_CPU * 60.0 / kPreScaler;
+
+}
+
+// limit duty cycle for pid controller
+#define MIN_DUTY_CYCLE_PID                      1UL
+#define MAX_DUTY_CYCLE_PID                      255UL
+#define START_DUTY_CYCLE_PID                    32UL
 
 // limit duty cycle
-#define VELOCITY_START_DUTY_CYCLE               40
-#define MIN_DUTY_CYCLE_PID                      1
 #define MIN_DUTY_CYCLE                          24
 #define MAX_DUTY_CYCLE                          255
+
+// use rising and falling edge for counting RPM
+#ifndef RPM_SENSE_TOGGLE_EDGE
+#    define RPM_SENSE_TOGGLE_EDGE 1
+#endif
+
+#ifndef RPM_SENSE_PULSES_PER_TURN
+// wheel with 120 slots
+#    if RPM_SENSE_TOGGLE_EDGE
+#       define RPM_SENSE_PULSES_PER_TURN (120 * 2)
+#    else
+#       define RPM_SENSE_PULSES_PER_TURN 120
+#    endif
+#endif
+
+// convert rpm to pulse length (ticks)
+#define RPM_SENSE_RPM_TO_TICKS(rpm) (Timer1::kTicksPerMinute / (RpmSensing::kPulsesPerTurn * (rpm)))
+
+// convert RPM pulse length (ticks) to RPM
+#define RPM_SENSE_TICKS_TO_RPM(pulse) ((Timer1::kTicksPerMinute / RpmSensing::kPulsesPerTurn) / (pulse))
+
+namespace RpmSensing {
+
+    static constexpr uint16_t kPulsesPerTurn = RPM_SENSE_PULSES_PER_TURN;
+
+    static constexpr uint32_t kOneRpmTicks = RPM_SENSE_RPM_TO_TICKS(1);
+    static constexpr uint32_t k60RpmTicks = RPM_SENSE_RPM_TO_TICKS(60);
+    static constexpr uint32_t k1000RpmTicks = RPM_SENSE_RPM_TO_TICKS(1000);
+    static constexpr uint32_t kMinRpmSignalPeriod = RPM_SENSE_RPM_TO_TICKS(RPM_MIN);
+    static constexpr uint32_t kMaxRpmSignalPeriod = RPM_SENSE_RPM_TO_TICKS(RPM_MAX);
+
+    // using less RPM than this value will cause an int24_t overflow in the PID controller
+    static constexpr uint32_t kMinRpmBeforeOverflow = RPM_SENSE_TICKS_TO_RPM(0xffff);
+
+    static_assert(RPM_MIN > kMinRpmBeforeOverflow, "increase min. RPM");
+
+}
 
 namespace VoltageDetection {
 
@@ -774,33 +797,7 @@ inline uint16_t mapValue16(uint16_t value, uint16_t fromMin, uint16_t fromMax, u
     ))
 #endif
 
-#define POTI_TO_RPM(value)                      mapValue16(value, POTI_MIN, POTI_MAX, RPM_MIN, RPM_MAX)
-#define RPM_TO_POTI(value)                      mapValue16(value, RPM_MIN, RPM_MAX, POTI_MIN, POTI_MAX)
-
-#define POTI_TO_DUTY_CYCLE(value)               mapValue16(value, POTI_MIN, POTI_MAX, MIN_DUTY_CYCLE, MAX_DUTY_CYCLE)
-
-#define EEPROM_MAGIC                            0xf1c9a544
-
-#if DEBUG_PID_CONTROLLER
-
-#define PID_TEST_OUTPUT_INTERVAL                250
-#define PID_TEST_WAIT                           1500            // wait for motor to stop
-#define PID_TEST_SET_POINTS                     10
-#define IS_PID_TUNING                           (pid_tune_increment != 0)
-
-extern float pid_tune_increment;
-extern uint16_t pid_test_set_points[PID_TEST_SET_POINTS];
-extern uint32_t pid_test_timer_start;
-extern uint32_t pid_test_timer_end;
-extern uint32_t pid_test_duration;
-extern uint16_t pid_test_micros_offset;
-extern uint16_t pid_test_counter;
-
-#else
-
-#define IS_PID_TUNING                           false
-
-#endif
+#define EEPROM_MAGIC                            0xf1c9a548
 
 // add type for variable to start
 // (uint8_t)0
@@ -824,11 +821,9 @@ enum class MotorStateEnum : uint8_t {
     OFF = 0,
     ON,
     // any "off" state other OFF requires to reset the motor before it can be turned on again
-    STARTUP,
     STALLED,
     ERROR,
     BRAKING
-    // CURRENT_LIMIT
 };
 
 enum class PidConfigEnum : uint8_t {
@@ -836,10 +831,9 @@ enum class PidConfigEnum : uint8_t {
     KP = 1,
     KI,
     KD,
-    OMUL,
-    DTMUL,
     SAVE,
     RESTORE,
+    PID_DEBUG,
     MAX
 };
 
@@ -852,193 +846,48 @@ enum class MotorStatusEnum : uint8_t {
 
 class ConfigData;
 
-class EEPROMData {
-public:
-    uint32_t magic;
-    ControlModeEnum control_mode;
-    uint8_t set_point_input_velocity;
-    uint8_t set_point_input_pwm;
-    uint8_t led_brightness;
-    uint8_t current_limit;
-    uint8_t brake_enabled;
-    uint16_t max_stall_time;
-    float Kp;
-    float Ki;
-    float Kd;
-    uint8_t max_pwm;
-    uint16_t rpm_per_volt;
-    MotorStatusEnum motor_status;
 
-    constexpr size_t size() const {
-        return sizeof(*this);
-    }
-
-    bool operator!=(const EEPROMData &data) const;
-    EEPROMData &operator=(const ConfigData &data);
-};
-
-inline bool EEPROMData::operator!=(const EEPROMData &data) const
-{
-    return memcmp(this, &data, size());
-}
-
-class ConfigData {
-public:
-    ConfigData();
-
-    ConfigData &operator=(const EEPROMData &data);
-
-    void setLedBrightness();
-    void setLedBrightnessNoDelay();
-
-    uint8_t getSetPoint() const;
-    uint16_t getSetPointRPM() const;
-    uint16_t getSetPointDutyCycle() const;
-    void setSetPoint(uint8_t value);
-    void changeSetPoint(int8_t value);
-
-    void setRpmPerVolt(uint16_t rpmV);
-    uint16_t getRpmPerVolt() const;
-
-    MotorStatusEnum getDisplayMotorStatus() const;
-    void setDisplayMotorStatus(MotorStatusEnum value);
-    void toggleDisplayMotorStatus();
-
-    PidConfigEnum pid_config;
-    uint8_t led_brightness;
-    uint8_t rpm_sense_average;
-
-private:
-    friend EEPROMData;
-
-    uint16_t rpm_per_volt;
-    #if HAVE_LED_FADING
-        uint32_t led_fade_timer;
-    #endif
-    uint8_t led_brightness_pwm;
-    uint8_t set_point_input_velocity;
-    uint8_t set_point_input_pwm;
-    MotorStatusEnum motor_status;
-};
-
-inline void ConfigData::setLedBrightnessNoDelay()
-{
-    #if HAVE_LED_FADING
-        led_fade_timer = 0;
-        led_brightness_pwm = led_brightness;
-        if (led_brightness_pwm > 0) {
-            led_brightness_pwm--;
-        }
-        else {
-            led_brightness_pwm++;
-        }
-    #endif
-    setLedBrightness();
-}
-
-inline uint16_t ConfigData::getSetPointRPM() const
-{
-    return POTI_TO_RPM(getSetPoint());
-}
-
-inline uint16_t ConfigData::getSetPointDutyCycle() const
-{
-    return POTI_TO_DUTY_CYCLE(getSetPoint());
-}
-
-inline void ConfigData::setRpmPerVolt(uint16_t rpmV)
-{
-    rpm_per_volt = rpmV;
-}
-
-inline uint16_t ConfigData::getRpmPerVolt() const
-{
-    return rpm_per_volt;
-}
-
-inline MotorStatusEnum ConfigData::getDisplayMotorStatus() const
-{
-    return motor_status;
-}
-
-inline void ConfigData::setDisplayMotorStatus(MotorStatusEnum value)
-{
-    motor_status = value;
-}
-
-inline void ConfigData::toggleDisplayMotorStatus()
-{
-    motor_status = static_cast<MotorStatusEnum>((static_cast<uint8_t>(motor_status) + 1) % static_cast<uint8_t>(MotorStatusEnum::MAX));
-}
-
-class UIConfigData {
-public:
-    UIConfigData() = default;
-
-    void refreshDisplay();
-    void disableRefreshDisplay();
-    void updateDutyCyle();
-    void updateDutyCyle(uint32_t length);
-    void updateRpmPulseWidth(uint32_t length);
-
-    volatile uint32_t refresh_timer;
-    uint16_t refresh_counter;
-    uint8_t display_duty_cycle_integral;
-    uint16_t display_pulse_length_integral;
-};
-
-// inline UIConfigData::UIConfigData() :
-//     refresh_timer(0),
-//     refresh_counter(0),
-//     display_duty_cycle_integral(0),
-//     display_pulse_length_integral(0),
-// {
-// }
-
-inline void UIConfigData::refreshDisplay()
-{
-    refresh_timer = 0;
-}
-
-inline void UIConfigData::disableRefreshDisplay()
-{
-    refresh_timer = ~0;
-}
-
-extern ConfigData data;
-extern UIConfigData ui_data;
-
-template<uint8_t _Port, uint8_t _BitMask>
-class InterruptPushButton : public PushButton {
-public:
-    InterruptPushButton(uint8_t button, uint8_t options) : PushButton(button, options) {
-    }
-
-protected:
-    virtual boolean _update_button_state() override {
-        return !(lastState.get<_Port>() & _BitMask);
-    }
-
-private:
-    uint8_t _port;
-};
+#include "pid_settings.h"
+#include "eeprom_data.h"
+#include "config_data.h"
+#include "uiconfig_data.h"
 
 extern Adafruit_SSD1306 display;
 extern Encoder knob;
 
+template<typename _Ta>
+void display_print_hl(bool highlight, _Ta text)
+{
+    if (highlight) {
+        display.setTextColor(BLACK, WHITE);
+    }
+    display.print(' ');
+    display.print(text);
+    display.print(' ');
+    if (highlight) {
+        display.setTextColor(WHITE);
+    }
+    display.print(' ');
+}
+
 void menu_display_submenu();
-void print_pid_cfg(char *buffer, size_t len);
 void refresh_display();
-void write_eeprom(const __FlashStringHelper *message = _F(SAVED));
+void write_eeprom(const __FlashStringHelper *message = nullptr);
 void read_rotary_encoder();
 void update_duty_cycle();
 
+class ConfigData;
+class UIConfigData;
+
+extern ConfigData data;
+extern UIConfigData ui_data;
+
 #include "menu.h"
+#include "interrupt_push_button.h"
 
 extern Menu menu;
 extern InterruptPushButton<PIN_BUTTON1_PORT, _BV(PIN_BUTTON1_BIT)> button1;
 extern InterruptPushButton<PIN_BUTTON2_PORT, _BV(PIN_BUTTON2_BIT)> button2;
-
 
 inline void display_message(const char *message, uint16_t time, uint8_t size = 2, size_t len = ~0U)
 {
@@ -1052,7 +901,7 @@ inline void display_message(const char *message, uint16_t time, uint8_t size = 2
     display.setTextSize(size);
     display.print(message);
     display.display();
-    ui_data.refresh_timer = millis() + time;
+    ui_data.setRefreshTimeoutOnce(time);
 }
 
 inline void display_message(const __FlashStringHelper *message, uint16_t time, uint8_t size = 2)
@@ -1062,4 +911,16 @@ inline void display_message(const __FlashStringHelper *message, uint16_t time, u
     char buf[strSize];
     memcpy_P(buf, message, strSize);
     display_message(buf, time, size, len);
+}
+
+inline void restart_device()
+{
+    for(int8_t i = 0; i < 5; i++) {
+        setCurrentLimitLedOn();
+        delay(75);
+        setCurrentLimitLedOff();
+        delay(75);
+    }
+    wdt_enable(WDTO_15MS);
+    for(;;) {}
 }
