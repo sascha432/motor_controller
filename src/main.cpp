@@ -755,8 +755,9 @@ void process_ui_events()
 void serial_commands() {
 #if HAVE_SERIAL_COMMANDS
     if (Serial.available()) {
-        uint8_t ch;
-        switch(ch = Serial.read()) {
+        char ch = Serial.read();
+        Serial.print(ch);
+        switch(ch) {
             case 'R':
                 restart_device();
                 break;
@@ -866,7 +867,7 @@ void serial_commands() {
                     break;
             #endif
 #endif
-            #if 0
+            #if 1
                 case 'e':
                     // print_pid_cfg_serial();
                     pid.printValues(Serial);
@@ -879,6 +880,8 @@ void serial_commands() {
                     start_stop_button_pressed(*(Button *)(nullptr));
                     // motor.dump(Serial);
                     break;
+                #endif
+            #if 0
                 case 'b':
                     if (isBrakeOn()) {
                         if (motor.getState() == MotorStateEnum::BRAKING) {
@@ -947,8 +950,10 @@ void loop() {
 
     #if 0
 
-    // EVERY_N_MILLIS(5)
-    {
+    static uint16_t debugIimer;
+    if (micros16() - debugIimer >= 5000) {
+        debugIimer = micros16();
+
         static int16_t dc = -1;
         if (motor.isOn()) {
             if (dc == -1) {
@@ -970,8 +975,8 @@ void loop() {
                 }
             }
             else if (ui_data.getRpm() == data.getSetPointRPM() || t > 2 * 1000000) {
-                Serial.println(F("end"));
-                motor.stop(MotorStateEnum::OFF);
+                // Serial.println(F("end"));
+                // motor.stop(MotorStateEnum::OFF);
             }
         }
         else {

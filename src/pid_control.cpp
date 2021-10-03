@@ -24,7 +24,7 @@ uint8_t PidController::getDutyCycle() const
 
 void PidController::printValues(Print &buffer) const
 {
-    char temp[64];
+    char temp[80];
     PrintBuffer buf(temp, sizeof(temp));
 
     buf.printTrimmed(_settings.Kp);
@@ -32,6 +32,8 @@ void PidController::printValues(Print &buffer) const
     buf.printTrimmed(_settings.Ki);
     buf.print(' ');
     buf.printTrimmed(_settings.Kd);
+    buf.print(' ');
+    buf.printTrimmed(_settings.OutputMultiplier);
 
     buffer.print(F("PID "));
     buffer.println(buf.getBuffer());
@@ -52,6 +54,10 @@ void PidController::displayPidSettingsMenu(PidConfigEnum highlight) const
 
     display_print_hl((highlight == PidConfigEnum::KD), F("Kd"));
     buf.clearPrintTrimmed(_settings.Kd);
+    display.println(buf.getBuffer());
+
+    display_print_hl((highlight == PidConfigEnum::KD), F("OpMp"));
+    buf.clearPrintTrimmed(_settings.OutputMultiplier);
     display.println(buf.getBuffer());
 
     display_print_hl((highlight == PidConfigEnum::SAVE), F("Save"));
@@ -78,9 +84,16 @@ void PidController::updateTicks(int32_t ticks)
     // 1.0 / (1000 * 1000.0 * _lastUpdate.getTime(_micros));
     _lastUpdate.start(_micros);
 
-    float error = (int32_t)ticks - data.getSetPointRPMTicks(); // values are inverted
+    float error = ticks - data.getSetPointRPMTicks(); // values are inverted
     // error *= std::min<float>(1.0, delta_t);
     // delta_t /= 1000;
+
+    // Serial.print(ticks);
+    // Serial.print(' ');
+    // Serial.print(data.getSetPointRPMTicks());
+    // Serial.print(' ');
+    // Serial.println(error);
+
 
     float output = _settings.Kp * error;
     if (_settings.Ki) {
@@ -93,7 +106,7 @@ void PidController::updateTicks(int32_t ticks)
         _previousError = error;
     }
 
-    output /= 32;
+    output *= pid.getPidValues().OutputMultiplier;
 
     // // // the output is divided by ((1 << kDutyCycleShift) * 32) = 4096 before added to the duty cycle 0-255
     // int32_t tmp = output;
@@ -102,6 +115,10 @@ void PidController::updateTicks(int32_t ticks)
     uint8_t dutyCycleBefore = current_limit.getDutyCycle(getDutyCycle());
     _dutyCycle = std::clamp<int32_t>(_dutyCycle + output, MIN_DUTY_CYCLE_PID << kDutyCycleShift, MAX_DUTY_CYCLE_PID << kDutyCycleShift);
     uint8_t dutyCycle8 = current_limit.getDutyCycle(getDutyCycle());
+
+    // Serial.print(dutyCycleBefore);
+    // Serial.print(' ');
+    // Serial.println(dutyCycle8);
 
     #if HAVE_PID_CONTROLLER_STATS
         if (dutyCycleBefore != dutyCycle8) {
@@ -116,7 +133,8 @@ void PidController::updateTicks(int32_t ticks)
         }
     #else
         if (dutyCycleBefore != dutyCycle8) {
-            setMotorPWM(dutyCycle8);
+            // setMotorPWM();
+            setMotorPWM_timer(dutyCycle8);
         }
     #endif
 }

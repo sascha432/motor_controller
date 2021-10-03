@@ -42,9 +42,9 @@ public:
         return pid_config;
     }
 
-    #if HAVE_LED
+    void loop();
 
-        void loop();
+    #if HAVE_LED
 
         bool updateLedBrightness();
 
@@ -75,12 +75,12 @@ private:
 
     PidConfigEnum pid_config;
     #if HAVE_RPM_PER_VOLT
-        uint16_t rpm_per_volt{300};
+        uint16_t rpm_per_volt;
     #endif
     #if HAVE_LED
-        uint8_t _ledBrightness{30 * 255 / LED_MAX_PWM};
-        uint8_t _ledBrightnessPwm{0};
-        uint16_t _ledFadeTimer{0};
+        uint8_t _ledBrightness;
+        uint8_t _ledBrightnessPwm;
+        uint16_t _ledFadeTimer;
     #endif
     uint8_t _setPointDutyCycle;
     uint16_t _setPointRpm;

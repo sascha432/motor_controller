@@ -53,16 +53,6 @@
 #define HAVE_LED                                1
 #endif
 
-// dimming the LED driver is supported
-// ~150 byte
-#ifndef HAVE_LED_FADING
-#define HAVE_LED_FADING                         1
-#endif
-
-#if HAVE_LED_FADING && !HAVE_LED
-#error HAVE_LED_FADING=1 requires HAVE_LED=1
-#endif
-
 // display help for serial commands when pressing ? or h
 // ~276 byte
 #ifndef HAVE_SERIAL_HELP
@@ -749,10 +739,10 @@ namespace Timer2 {
 #endif
 
 // convert rpm to pulse length (ticks)
-#define RPM_SENSE_RPM_TO_TICKS(rpm) (Timer1::kTicksPerMinute / (RpmSensing::kPulsesPerTurn * (rpm)))
+#define RPM_SENSE_RPM_TO_TICKS(rpm) (Timer1::kTicksPerMinute / (RpmSensing::kPulsesPerTurn * static_cast<double>(rpm)))
 
 // convert RPM pulse length (ticks) to RPM
-#define RPM_SENSE_TICKS_TO_RPM(pulse) ((Timer1::kTicksPerMinute / RpmSensing::kPulsesPerTurn) / (pulse))
+#define RPM_SENSE_TICKS_TO_RPM(pulse) ((Timer1::kTicksPerMinute / RpmSensing::kPulsesPerTurn) / static_cast<double>(pulse))
 
 namespace RpmSensing {
 
@@ -831,6 +821,7 @@ enum class PidConfigEnum : uint8_t {
     KP = 1,
     KI,
     KD,
+    OM,
     SAVE,
     RESTORE,
     PID_DEBUG,

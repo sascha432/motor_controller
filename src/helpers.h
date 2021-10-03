@@ -281,6 +281,11 @@ inline uint16_t millis16()
     return static_cast<uint16_t>(millis());
 }
 
+inline uint16_t micros16()
+{
+    return static_cast<uint16_t>(micros());
+}
+
 
 #pragma GCC optimize("Os")
 

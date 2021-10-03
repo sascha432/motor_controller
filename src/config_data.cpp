@@ -7,9 +7,18 @@
 #include "pid_control.h"
 #include "motor.h"
 #include "current_limit.h"
+#include "config_data.h"
 
 ConfigData::ConfigData() :
     pid_config(PidConfigEnum::OFF),
+    #if HAVE_RPM_PER_VOLT
+        rpm_per_volt(300),
+    #endif
+    #if HAVE_LED
+        _ledBrightness(30 * 255 / LED_MAX_PWM),
+        _ledBrightnessPwm(0),
+        _ledFadeTimer(0),
+    #endif
     _setPointDutyCycle(30 * 100 / MAX_DUTY_CYCLE),
     _setPointRpm(1000),
     _setPointTicks(RPM_SENSE_RPM_TO_TICKS(1000)),
@@ -75,6 +84,8 @@ void ConfigData::changeSetPoint(int16_t value)
     }
 }
 
+#if HAVE_LED
+
 bool ConfigData::updateLedBrightness()
 {
     if (_ledBrightnessPwm != _ledBrightness) {
@@ -89,11 +100,15 @@ bool ConfigData::updateLedBrightness()
     return _ledBrightnessPwm != _ledBrightness;
 }
 
+#endif
+
 void ConfigData::loop()
 {
+#if HAVE_LED
     auto millis = millis16();
     if (millis - _ledFadeTimer >= LED_FADE_TIME) {
         _ledFadeTimer = millis;
         updateLedBrightness();
     }
+#endif
 }

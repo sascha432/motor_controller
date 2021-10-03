@@ -9,18 +9,21 @@ struct PidSettings
     float Kp;
     float Ki;
     float Kd;
+    float OutputMultiplier;
 
     PidSettings() :
         Kp(5.0),
         Ki(0.0),
-        Kd(0.0)
+        Kd(0.0),
+        OutputMultiplier(1 / 64.0)
     {
     }
 
-    PidSettings(float aKp, float aKi, float aKd) :
+    PidSettings(float aKp, float aKi, float aKd, float aOutputMultiplier) :
         Kp(aKp),
         Ki(aKi),
-        Kd(aKd)
+        Kd(aKd),
+        OutputMultiplier(aOutputMultiplier)
     {
     }
 
@@ -33,7 +36,7 @@ struct PidSettings
     }
 
     constexpr const float *end() const {
-        return &Kd + 1;
+        return &OutputMultiplier + 1;
     }
 
     float &operator[](PidConfigEnum index) {
@@ -44,6 +47,8 @@ struct PidSettings
                 return Ki;
             case PidConfigEnum::KD:
                 return Kd;
+            case PidConfigEnum::OM:
+                return OutputMultiplier;
             default:
                 break;
         }

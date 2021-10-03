@@ -299,7 +299,7 @@ public:
     #endif
     PidSettings _settings;
 
-private:
+// private:
     friend class RpmSense;
     friend class CurrentLimit;
 

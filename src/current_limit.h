@@ -221,15 +221,18 @@ inline void CurrentLimit::_resetTimer()
     OCR1A = TCNT1 + kCurrentLimitTicks;
 }
 
-inline uint8_t CurrentLimit::getDutyCycle(uint8_t duty_cycle)
+inline uint8_t CurrentLimit::getDutyCycle(uint8_t dutyCycle)
 {
+    if (_state == CurrentLimit::CurrentLimitStateEnum::DISABLED) {
+        return dutyCycle;
+    }
     if (_limitMultiplier == 0) {
         return CURRENT_LIMIT_MIN_DUTY_CYCLE;
     }
     if (_limitMultiplier == kCurrentLimitMaxMultiplier) {
-        return duty_cycle;
+        return dutyCycle;
     }
-    return std::max(CURRENT_LIMIT_MIN_DUTY_CYCLE, (duty_cycle * (_limitMultiplier + 1)) >> kCurrentLimitShift);
+    return std::max(CURRENT_LIMIT_MIN_DUTY_CYCLE, (dutyCycle * (_limitMultiplier + 1)) >> kCurrentLimitShift);
 }
 
 inline void CurrentLimit::timer1CompareMatchA()
