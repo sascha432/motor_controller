@@ -7,10 +7,6 @@
 #include "motor.h"
 #include "pid_control.h"
 
-#if HAVE_GCC_OPTIMIZE_O3
-#    pragma GCC optimize("O3")
-#endif
-
 CurrentLimit current_limit;
 
 #if HAVE_CURRENT_LIMIT

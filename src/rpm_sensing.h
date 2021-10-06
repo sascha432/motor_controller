@@ -7,36 +7,21 @@
 #include "main.h"
 #include <Arduino.h>
 
-// // convert rpm to pulse length (µs)
-// #define RPM_SENSE_RPM_TO_US(rpm) (rpm ? ((1000000UL * 60UL / RPM_SENSE_PULSES_PER_TURN) / (rpm)) : 0)
-
-// // convert RPM pulse length (µs) to RPM
-// #define RPM_SENSE_US_TO_RPM(pulse) ((1000000UL * 60UL / RPM_SENSE_PULSES_PER_TURN) / (pulse))
-
-// // convert RPM pulse length (µs) to Hz
-// #define RPM_SENSE_US_TO_HZ(pulse) ((1000000UL / RPM_SENSE_PULSES_PER_TURN) / (pulse))
-
-// // convert RPM pulse length (ticks) to Hz
-// #define RPM_SENSE_TICKS_TO_HZ(pulse) ((1000000UL / RPM_SENSE_PULSES_PER_TURN * Timer1::kTicksPerMicrosecond) / (pulse))
-
-// // convert pulse length in µs to kHz
-// #define RPM_SENSE_US_TO_KHZ(pulse) (1000 / static_cast<float>(pulse))
-
-// if RPM falls below this value, RPM sensing will detect a halt
-// #define RPM_SENSE_RPM_MIN std::max(10, (RPM_MIN / 10))
-
-// #define RPM_SENSE_RPM_MIN_TICKS (RPM_SENSE_RPM_TO_US(RPM_SENSE_RPM_MIN) * Timer1::kTicksPerMicrosecond)
-
-// used to calculate RPM_SENSE_IGNORE_SIGNAL_TIME, should be 3x the maximum RPM to detect
-// #define RPM_SENSE_RPM_MAX (RPM_MAX * 3)
-
 class PidController;
 
 class RpmSense {
 public:
     struct Events {
-        uint32_t ticks;
-        uint16_t count;
+        uint32_t _ticks;
+        uint16_t _count;
+
+        Events() {}
+        Events(uint32_t ticks, uint16_t count) : _ticks(ticks), _count(count) {}
+
+        void clear() {
+            _ticks = 0;
+            _count = 0;
+        }
     };
 
 public:
@@ -48,88 +33,64 @@ public:
     void _overflowISR();
     void _captureISR();
 
-    uint32_t getLastSignalMillis() const;
-    volatile uint32_t _getLastSignalMillis() const;
-    void setLastSignalMillis(uint32_t millis);
-    int32_t getTimerIntegralTicks() const;
-    volatile int32_t _getTimerIntegralTicks() const;
-    uint16_t getRpm() const;
+    uint32_t getLastSignalTicks() const;
 
     Events getEvents();
 
 private:
+    uint32_t getTicksDiff(uint32_t current, uint32_t last) const;
+
+private:
     friend PidController;
 
-    volatile uint16_t _timerOverflow;
+    volatile uint32_t _timerOverflow;
     volatile uint32_t _lastTicks;
-    volatile uint32_t _ticksIntegral;
-    volatile uint32_t _lastSignalMillis;
     volatile bool _isrLocked;
-    volatile uint8_t _events;
-    volatile uint32_t _ticksSum;
-    volatile uint16_t _eventsSum;
+    volatile uint8_t _counter;
+    Events _events;
 };
 
 extern RpmSense rpm_sense;
 
 inline uint16_t UIConfigData::getRpm() const
 {
-    return RPM_SENSE_TICKS_TO_RPM(display_pulse_length_integral);
+    return RPM_SENSE_TICKS_TO_RPM(_displayRpm);
 }
 
 inline __attribute__((always_inline)) void RpmSense::_overflowISR()
 {
-    _timerOverflow++;
+    _timerOverflow += 1UL << 16;
 }
 
-inline uint32_t RpmSense::getLastSignalMillis() const
+inline uint32_t RpmSense::getLastSignalTicks() const
 {
+    uint32_t last, current;
     ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-        return _lastSignalMillis;
+        last = _lastTicks;
+        current = _timerOverflow;
     }
-    __builtin_unreachable();
+    return getTicksDiff(current | TCNT1, last);
 }
 
-volatile inline uint32_t RpmSense::_getLastSignalMillis() const
+inline __attribute__((always_inline)) uint32_t RpmSense::getTicksDiff(uint32_t current, uint32_t last) const
 {
-    return _lastSignalMillis;
-}
-
-inline void RpmSense::setLastSignalMillis(uint32_t millis)
-{
-    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-        _lastSignalMillis = millis;
+    uint32_t diff = current - last;
+    if (diff > 0x7fffffffUL) {
+        // handle _timerOverflow during locked interrupts
+        diff += 1UL << 16;
     }
-}
-
-inline int32_t RpmSense::getTimerIntegralTicks() const
-{
-    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-        return _ticksIntegral;
-    }
-    __builtin_unreachable();
-}
-
-volatile inline int32_t RpmSense::_getTimerIntegralTicks() const
-{
-    return _ticksIntegral;
-}
-
-inline uint16_t RpmSense::getRpm() const
-{
-    return RPM_SENSE_TICKS_TO_RPM(getTimerIntegralTicks());
+    return diff;
 }
 
 inline RpmSense::Events RpmSense::getEvents()
 {
-    if (!_eventsSum) {
-        return Events({0, 0});
+    if (!_events._count) {
+        return Events(0, 0);
     }
+    Events events;
     ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-        Events tmp = { _ticksSum, _eventsSum };
-        _ticksSum = 0;
-        _eventsSum = 0;
-        return tmp;
+        events = Events(_events._ticks, _events._count);
+        _events.clear();
     }
-    __builtin_unreachable();
+    return events;
 }

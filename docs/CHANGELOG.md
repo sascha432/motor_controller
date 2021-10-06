@@ -18,7 +18,7 @@
  - Replaced analogWrite to reduce code size
  - Displaying motor current while running
  - Option to display Ampere or Watt while running
- - Enabled WDT while motor is running to turn it off if a crash occurs
+ - Enabled WDT while motor is running to turn it off if the software hangs
  - Rewritten the PID controller
 
 ## 1.0.3

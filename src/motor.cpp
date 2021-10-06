@@ -18,9 +18,10 @@ void Motor::loop()
     if (motor.isOn()) {
 
         // check if the RPM signal has not been updated for a given period of time
-        auto start = rpm_sense.getLastSignalMillis();
-        uint32_t dur = millis() - start;
-        if (dur > _maxStallTime) {
+        auto last = rpm_sense.getLastSignalTicks();
+        if (last > _maxStallTime * Timer1::kTicksPerMillisecond) {
+            Serial.print(F("last signal "));
+            Serial.println(last/Timer1::kTicksPerMillisecond);
             #if DEBUG_MOTOR_SPEED
                 if (motor.isOn()) {
                     Serial.printf_P(PSTR("dur=%lu max=%u\n"), dur, _maxStallTime);
@@ -83,9 +84,6 @@ void Motor::start()
             setSpeed(data.getSetPointDutyCycle());
         }
         else {
-            #if HAVE_PID_CONTROLLER_STATS
-                pid._stats.start();
-            #endif
             setSpeed(START_DUTY_CYCLE_PID);
         }
     }
@@ -94,10 +92,6 @@ void Motor::start()
 
 void Motor::stop(MotorStateEnum state)
 {
-    #if HAVE_PID_CONTROLLER_STATS
-        pid._stats.stop();
-    #endif
-
     ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
         _state = state;
         setSpeed(0);
@@ -118,15 +112,11 @@ void Motor::stop(MotorStateEnum state)
             message = motor.isBrakeEnabled() ? F("BRAKING") : F("OFF");
             break;
     }
-    display_message(message, DISPLAY_MENU_TIMEOUT / 2);
+    display_message(message, Timeouts::Menu::kMessage);
     data.pidConfig() = PidConfigEnum::OFF;
 
     current_limit.enable();
     wdt_disable();
-
-    // #if HAVE_PID_CONTROLLER_STATS
-    //     pid._stats.dumpInfo(Serial);
-    // #endif
 }
 
 // set PWM duty cycle with enabling/disabling the brake and turning the motor signal led on/off

@@ -182,7 +182,7 @@ inline void Menu::close()
 {
     closeNoRefresh();
     refresh_display();
-    ui_data.setRefreshTimeoutOnce(500);
+    ui_data.setRefreshTimeoutOnce(Timeouts::Menu::kClose);
 }
 
 inline void Menu::closeNoRefresh()
@@ -194,7 +194,7 @@ inline void Menu::open()
 {
     knob.setAcceleration(0);
     resetTimer();
-    setTimeout(DISPLAY_MENU_TIMEOUT);
+    setTimeout(Timeouts::Menu::kAutoExit);
     _state = MenuState::MAIN;
 }
 

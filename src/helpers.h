@@ -33,10 +33,6 @@ void debug_print_millis();
 #define debug_printf(...)
 #endif
 
-#if HAVE_GCC_OPTIMIZE_O3
-#    pragma GCC optimize("O3")
-#endif
-
 namespace std {
 
     template <typename _Ta, typename _Tpred>
@@ -310,6 +306,10 @@ public:
     }
 
     void printTrimmed(float f, uint8_t precision = 6) {
+        if (f == 0) {
+            print(0);
+            return;
+        }
         print(f, precision);
         _trimFloat();
     }

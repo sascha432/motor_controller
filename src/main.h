@@ -42,12 +42,6 @@
 #define HAVE_SERIAL_COMMANDS                    1
 #endif
 
-// enable stats output over serial
-// ~1-2kbyte
-#ifndef HAVE_PID_CONTROLLER_STATS
-#define HAVE_PID_CONTROLLER_STATS               0
-#endif
-
 // disable LED support
 #ifndef HAVE_LED
 #define HAVE_LED                                1
@@ -86,7 +80,7 @@
 // display power consumption of the LEDs
 // ~434 byte
 #ifndef HAVE_LED_POWER
-#define HAVE_LED_POWER                          1
+#define HAVE_LED_POWER                          0
 #endif
 
 // pins
@@ -671,23 +665,60 @@ inline float led_power_polynomial_regress(uint8_t pwm)
 // negative to invert changing values
 #define KNOB_VALUE_SPEED                        (256L * KNOB_INVERTED)
 // negative to invert changing pid controller values
-#define KNOB_PID_SPEED                          (64L * KNOB_INVERTED)
+#define KNOB_PID_SPEED                          (256L * KNOB_INVERTED)
 
 #define KNOB_GET_VALUE(value, speed)            menu.getKnobValue(value, speed, 1)
 
-#define MENU_LONG_PRESS_MILLIS                  450
+namespace Timeouts {
 
-#define DISPLAY_MENU_TIMEOUT                    7500
-#define DISPLAY_SAVED_TIMEOUT                   1250
-#define DISPLAY_BOOT_VERSION_TIMEOUT            1000
-#define DISPLAY_REFRESH_TIME                    125
+    // milliseconds
+
+    // display version
+    // this needs to be at least 750ms, otherwise the OLED display is not ready
+    // try to increase the value if there is any issues with a blank display
+    static constexpr uint16_t kBootDelay = 1000;
+
+    // time to display version during boot
+    static constexpr uint16_t kVersion = 1000;
+
+    namespace UI {
+
+        // time to press buttons to detect a long press
+        static constexpr uint16_t kLongPress = 450;
+
+    }
+
+    namespace Menu {
+
+        // leave menu after this timeout
+        static constexpr uint16_t kAutoExit = 7500;
+        // block any inputs after closing the menu
+        static constexpr uint16_t kClose = 500;
+        // display time for EEPROM saved message
+        static constexpr uint16_t kSaved = 1250;
+        // display time for other messages
+        static constexpr uint16_t kMessage = 3000;
+
+    }
+
+    namespace Display {
+
+        static constexpr uint16_t kRefresh = 125;
+
+    }
+
+}
 
 // min. and max. RPM that can be selected in the UI
+// NOTE: low RPM with the PID controller creates a lot short current peaks (>40A)
+// the best way to improve this is to add more input capacitance or a power supply
+// that can handle those currents and thick wires
+// for my motor, the limit is ~500rpm before the 1000uF input capacitance are not enough anymore
 #define RPM_MIN                                 150
 #define RPM_MAX                                 4500
 
-#define STALL_TIME_MIN                          250
-#define STALL_TIME_MAX                          5000
+#define STALL_TIME_MIN                          125
+#define STALL_TIME_MAX                          10000
 
 // RPM sensing
 #define TIMER1_PRESCALER                        1
@@ -696,13 +727,12 @@ inline float led_power_polynomial_regress(uint8_t pwm)
 // motor PWM
 #define TIMER2_PRESCALER                        1
 #define TIMER2_PRESCALER_BV                      _BV(CS20); // 31250Hz
-// #define PWM_CYCLE_TICKS                         ((F_CPU / TIMER1_PRESCALER) / PWM_FREQUENCY)
-// #define PWM_DUTY_CYCLE_TO_TICKS(duty_cycle)     (duty_cycle * static_cast<uint32_t>(PWM_CYCLE_TICKS) / (MAX_DUTY_CYCLE)
 
 namespace Timer1 {
 
     static constexpr uint8_t kPreScaler = TIMER1_PRESCALER;
     static constexpr float kTicksPerMicrosecond = F_CPU / kPreScaler / 1000000.0;
+    static constexpr uint32_t kTicksPerMillisecond = F_CPU / kPreScaler / 1000.0;
     static constexpr uint32_t kTicksPerMinute = F_CPU * 60.0 / kPreScaler;
 
 }
@@ -721,7 +751,7 @@ namespace Timer2 {
 #define START_DUTY_CYCLE_PID                    32UL
 
 // limit duty cycle
-#define MIN_DUTY_CYCLE                          24
+#define MIN_DUTY_CYCLE                          8
 #define MAX_DUTY_CYCLE                          255
 
 // use rising and falling edge for counting RPM
@@ -759,6 +789,15 @@ namespace RpmSensing {
 
     static_assert(RPM_MIN > kMinRpmBeforeOverflow, "increase min. RPM");
 
+    // sanity check for the PID controller
+    // RPM_SENSE_TOGGLE_EDGE=1 should be used when low RPMs are required
+    // RPM_SENSE_TOGGLE_EDGE=0 should be used when high RPMs are required
+    #if RPM_SENSE_TOGGLE_EDGE
+        static_assert(700 < kMaxRpmSignalPeriod, "set RPM_SENSE_TOGGLE_EDGE=0 or decrease RPM_MAX");
+    #else
+        static_assert(30000 > kMinRpmSignalPeriod, "set RPM_SENSE_TOGGLE_EDGE=1 to increase the number of RPM interrupts or increase RPM_MIN");
+    #endif
+
 }
 
 namespace VoltageDetection {
@@ -770,37 +809,15 @@ namespace VoltageDetection {
 
 }
 
-inline uint16_t mapValue16(uint16_t value, uint16_t fromMin, uint16_t fromMax, uint16_t toMin, uint16_t toMax)
-{
-    return
-        (value >= fromMax ? toMax : (
-            ((value * static_cast<uint32_t>(toMax - toMin) / (fromMax - fromMin)) + (toMin - (fromMin * static_cast<uint32_t>(toMax - toMin) / (fromMax - fromMin))))
-        ));
-}
-
-#if 0
-#define MAP(value, FROM_MIN, FROM_MAX, TO_MIN, TO_MAX) \
-    (value <= FROM_MIN ? TO_MIN : ( \
-        (value >= FROM_MAX ? TO_MAX : (  \
-            ((value * static_cast<uint32_t>(TO_MAX - TO_MIN) / (FROM_MAX - FROM_MIN)) + (TO_MIN - (FROM_MIN * static_cast<uint32_t>(TO_MAX - TO_MIN) / (FROM_MAX - FROM_MIN)))) \
-        )) \
-    ))
-#endif
+// inline uint16_t mapValue16(uint16_t value, uint16_t fromMin, uint16_t fromMax, uint16_t toMin, uint16_t toMax)
+// {
+//     return
+//         (value >= fromMax ? toMax : (
+//             ((value * static_cast<uint32_t>(toMax - toMin) / (fromMax - fromMin)) + (toMin - (fromMin * static_cast<uint32_t>(toMax - toMin) / (fromMax - fromMin))))
+//         ));
+// }
 
 #define EEPROM_MAGIC                            0xf1c9a548
-
-// add type for variable to start
-// (uint8_t)0
-// 0UL
-// 0.0f
-// etc...
-#define __for_range_arg_count(...)                          __for_range_arg_count_(,##__VA_ARGS__,3,2,1,0)
-#define __for_range_arg_count_(a,b,c,d,cnt,...)             cnt
-
-#define __for_range_first_arg(n0, n1, ...)                  n1
-#define __for_range_second_arg(n0, n1, n2, ...)             n2
-
-#define for_range(var, start, end, ...)                     for(auto var = ((__for_range_arg_count(end, ...) == 2 ? (uint8_t)start : start); var < end; var += (__for_range_arg_count(end, ...) == 0 ? 1 : __for_range_first_arg(0, ##__VA_ARGS__, 0)))
 
 enum class ControlModeEnum : uint8_t {
     DUTY_CYCLE = 0,
@@ -824,12 +841,11 @@ enum class PidConfigEnum : uint8_t {
     OM,
     SAVE,
     RESTORE,
-    PID_DEBUG,
     MAX
 };
 
 enum class MotorStatusEnum : uint8_t {
-    OFF = 0,
+    // OFF = 0, // remove comment to allow turning it off
     AMPERE,
     WATT,
     MAX
@@ -847,7 +863,7 @@ extern Adafruit_SSD1306 display;
 extern Encoder knob;
 
 template<typename _Ta>
-void display_print_hl(bool highlight, _Ta text)
+void display_print_hl(bool highlight, _Ta text, char end = ' ')
 {
     if (highlight) {
         display.setTextColor(BLACK, WHITE);
@@ -858,7 +874,7 @@ void display_print_hl(bool highlight, _Ta text)
     if (highlight) {
         display.setTextColor(WHITE);
     }
-    display.print(' ');
+    display.print(end);
 }
 
 void menu_display_submenu();
@@ -906,12 +922,6 @@ inline void display_message(const __FlashStringHelper *message, uint16_t time, u
 
 inline void restart_device()
 {
-    for(int8_t i = 0; i < 5; i++) {
-        setCurrentLimitLedOn();
-        delay(75);
-        setCurrentLimitLedOff();
-        delay(75);
-    }
     wdt_enable(WDTO_15MS);
     for(;;) {}
 }

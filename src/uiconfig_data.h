@@ -8,7 +8,7 @@
 
 class UIConfigData {
 public:
-    static constexpr int16_t kDefaultTimeout = DISPLAY_REFRESH_TIME;
+    static constexpr int16_t kDefaultTimeout = Timeouts::Display::kRefresh;
 public:
     UIConfigData();
 
@@ -40,8 +40,8 @@ public:
     uint16_t getRpm() const;
 
     // get averaged duty cycle
-    uint16_t getDutyCycle() const {
-        return display_duty_cycle_integral;
+    uint8_t getDutyCycle() const {
+        return _dutyCycleAvg;
     }
 
 private:
@@ -53,16 +53,16 @@ private:
 
     uint32_t _refreshTimer;
     int16_t _timeout;
-    float display_duty_cycle_integral;
-    float display_pulse_length_integral;
+    uint8_t _dutyCycleAvg;
+    uint16_t _displayRpm;
     uint16_t _updateUITimer;
 };
 
 inline UIConfigData::UIConfigData() :
     _refreshTimer(0),
     _timeout(kDefaultTimeout),
-    display_duty_cycle_integral(0),
-    display_pulse_length_integral(RPM_SENSE_RPM_TO_TICKS(1))
+    _dutyCycleAvg(0),
+    _displayRpm(0)
 {
 }
 

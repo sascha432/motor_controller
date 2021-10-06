@@ -73,7 +73,7 @@ Menu menu;
 void UIConfigData::loop()
 {
     auto millis = millis16();
-    if (millis - _updateUITimer >= DISPLAY_REFRESH_TIME) {
+    if (millis - _updateUITimer >= Timeouts::Display::kRefresh) {
         _updateUITimer = millis;
         updateRpmAndDutyCycle();
     }
@@ -82,28 +82,10 @@ void UIConfigData::loop()
 void UIConfigData::updateRpmAndDutyCycle()
 {
     auto events = rpm_sense.getEvents();
-    if (events.count) {
-        #if 0
-            // slower update rate
-            display_pulse_length_integral = display_pulse_length_integral + (events.ticks / static_cast<float>(events.count));
-            display_pulse_length_integral /= 2.0;
-        #elif 1
-            // faster update rate
-            display_pulse_length_integral = display_pulse_length_integral + events.ticks;
-            display_pulse_length_integral /= events.count + 1.0;
-        #else
-            // faster update rate and averaging over the last 5 values
-            display_pulse_length_integral = (display_pulse_length_integral * 4) + events.ticks;
-            display_pulse_length_integral /= events.count + 5.0;
-        #endif
-
-        // Serial.print(display_pulse_length_integral, 2);
-        // Serial.print(' ');
-        // Serial.println(getMotorPWM_timer());
+    if (events._count) {
+        _displayRpm = (static_cast<uint32_t>(_displayRpm) + events._ticks) / (events._count + 1);
     }
-
-    // if called 10 times per second, this will give the average value of the duty cycle over one second
-    display_duty_cycle_integral = ((display_duty_cycle_integral * 9) + getMotorPWM_timer()) / 10.0;
+    _dutyCycleAvg = ((static_cast<uint16_t>(_dutyCycleAvg) << 2) + getMotorPWM_timer()) / 5;
 }
 
 void read_eeprom()
@@ -133,7 +115,7 @@ void write_eeprom(const __FlashStringHelper *message)
     EEPROM.get(0, eeprom_data_current);
     if (eeprom_data != eeprom_data_current) {
         EEPROM.put(0, eeprom_data);
-        display_message(message, DISPLAY_SAVED_TIMEOUT);
+        display_message(message, Timeouts::Menu::kSaved);
     }
     else {
         menu.close();
@@ -161,8 +143,6 @@ bool setup_display_begin()
 // setup and clear display
 void setup_display()
 {
-    static constexpr uint16_t kDisplayBootTimeDelay = 1000;
-
     // the display needs some time to power up...
     // fade in the LED meanwhile and blink the current limit indicator LED
     auto start = millis16();
@@ -176,7 +156,7 @@ void setup_display()
             setCurrentLimitLedOff();
         }
     }
-    while((time = (millis16() - start)) < kDisplayBootTimeDelay);
+    while((time = (millis16() - start)) < Timeouts::kBootDelay);
 
     if (setup_display_begin()) {
         display.setTextColor(WHITE);
@@ -264,30 +244,29 @@ void refresh_display()
         display.setCursor(0, 0);
         if (motor.isVelocityMode()) {
             // velocity
-            if (data.pidConfig() == PidConfigEnum::PID_DEBUG) {
+            #if 0
+            // debug screen
+            if (1) {
 
                 display.print(data.getSetPointRPM());
                 display.print(' ');
-                display.print(ui_data.getDutyCycle());
-                display.print(' ');
-                // display.println(_dutyCycle / static_cast<float>(1UL << pid.kDutyCycleShift), 2);
-                auto U = adc.getVoltage_V();
-                auto I = adc.getCurrent_A();
-                display.print(U, 2);
-                display.print(F("V "));
-                display.print(I, 2);
-                display.print(F("A "));
-                display.print(U * I, 2);
-                display.println(F("W "));
-
+                display.println(ui_data.getDutyCycle());
+                display.println(rpm_sense.getLastSignalTicks() / Timer1::kTicksPerMillisecond);
+                // auto U = adc.getVoltage_V();
+                // auto I = adc.getCurrent_A();
+                // display.print(U, 2);
+                // display.print(F("V "));
+                // display.print(I, 2);
+                // display.print(F("A "));
+                // display.print(U * I, 2);
+                // display.println(F("W "));
 
                 display.setTextSize(2);
                 display.print(ui_data.getRpm());
-                display.print(' ');
-                display.println(rpm_sense.getRpm());
 
-            }
-            else if (data.pidConfig() == PidConfigEnum::OFF) {
+            } else
+            #endif
+            if (data.pidConfig() == PidConfigEnum::OFF) {
                 if (motor.isOn()) {
                     // motor on
                     display_set_point_rpm();
@@ -395,7 +374,7 @@ void menu_display_submenu()
         set_version(message);
         display.println(message);
 
-        pid.printValues(display);
+        pid.printValues(display, false);
 
         #if HAVE_LED
             _ledBrightness_str(message, sizeof(message));
@@ -413,10 +392,18 @@ void menu_display_submenu()
         #endif
         #if HAVE_CURRENT_LIMIT
             if (!current_limit.isDisabled()) {
-                current_limit_str(message, sizeof(message));
-                display.printf_P(PSTR(" Imax %s"), message);
+                display.print(F("Imax "));
+                display.print(current_limit.getLimitAmps(), 1);
+                display.print('A');
             }
         #endif
+
+        // int8_t overflow = display.getCursorY() - (SCREEN_HEIGHT);
+        // if (overflow > 0) {
+        //     Serial.print(overflow);
+        //     Serial.print(' ');
+        //     Serial.println(overflow / FONT_HEIGHT); //TODO add scrolling
+        // }
 
         ui_data.setRefreshTimeout(250);
     }
@@ -513,11 +500,7 @@ bool update_motor_settings(int16_t value)
 
 void rotary_button_released(Button& btn, uint16_t duration)
 {
-    if (duration > 5000) {
-        restart_device();
-    }
-
-    bool longPress = duration > MENU_LONG_PRESS_MILLIS;
+    bool longPress = duration > Timeouts::UI::kLongPress;
     if (motor.isOn() || (longPress && !menu.isOpen())) {
         // motor running
         if (longPress) { // long press?
@@ -545,8 +528,10 @@ void rotary_button_released(Button& btn, uint16_t duration)
                 case MenuEnum::MENU_RESTORE: {
                         menu.closeNoRefresh();
                         data = ConfigData();
+                        motor = Motor();
                         pid.resetPidValues();
                         write_eeprom(F("RESTORED"));
+                        delay(500);
                         restart_device();
                     }
                     break;
@@ -692,7 +677,7 @@ void setup()
         Serial.print(F("Compiled on "));
         Serial.println(FPSTR(__compile_date__));
     #endif
-    display_message(message, DISPLAY_BOOT_VERSION_TIMEOUT, 1);
+    display_message(message, Timeouts::kVersion, 1);
 
     current_limit.enable();
 
@@ -714,8 +699,8 @@ void readStringUntil(char *begin, char *end, uint16_t timeout = 1000)
 
 void update_pid_cfg()
 {
-    // w1.1,0.5,0.05
-    // w2,0,0
+    // w1.1,0.5,0.05,0.015
+    // w2,0,0,0.015
     static const char *sep =  ",\r\n";
     char buf[64];
     readStringUntil(buf, buf + sizeof(buf) - 1);
@@ -824,7 +809,7 @@ void serial_commands() {
                     motor.setSpeed(i);
                     data.rpm_sense_average = 64;
                     delay(2500);
-                    uint16_t rpm = RPM_SENSE_TICKS_TO_RPM(ui_data.display_pulse_length_integral);
+                    uint16_t rpm = RPM_SENSE_TICKS_TO_RPM(ui_data._displayRpm);
                     auto U = adc.getVoltage_V();
                     Serial.printf_P(PSTR("%u %u %u "), i, U, rpm);
                     auto effU = ((U * i) / 255) - 0.68/*switching and cable losses*/;
@@ -983,16 +968,5 @@ void loop() {
             dc = -1;
         }
     }
-    #endif
-
-    #if HAVE_PID_CONTROLLER_STATS
-        pid._stats.flushSingle();
-        // EVERY_N_MILLIS(5000) {
-        //     pid._stats.dumpInfo(Serial);
-        // }
-        // // try to send 2, those might fit into the serial buffer
-        // if (pid._stats.flushSingle()) {
-        //     pid._stats.flushSingle();
-        // }
     #endif
 }

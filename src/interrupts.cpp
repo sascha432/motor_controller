@@ -40,10 +40,6 @@ void setup_interrupts()
     pciSetup(PIN_ROTARY_ENC_DT);
 }
 
-#if HAVE_GCC_OPTIMIZE_O3
-#    pragma GCC optimize("O3")
-#endif
-
 // pin change interrupt handler
 // changesets are collected through the ISRs
 

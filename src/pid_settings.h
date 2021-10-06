@@ -12,10 +12,14 @@ struct PidSettings
     float OutputMultiplier;
 
     PidSettings() :
-        Kp(5.0),
+        Kp(7.5),
         Ki(0.0),
         Kd(0.0),
-        OutputMultiplier(1 / 64.0)
+        #if RPM_SENSE_TOGGLE_EDGE
+            OutputMultiplier(1 / 64.0)
+        #else
+            OutputMultiplier(1 / 32.0)
+        #endif
     {
     }
 

@@ -9,9 +9,6 @@
 #include "motor.h"
 #include "pid_control.h"
 
-#if HAVE_GCC_OPTIMIZE_O3
-#    pragma GCC optimize("O3")
-#endif
 RpmSense rpm_sense;
 
 // overflow interrupt
@@ -39,13 +36,10 @@ void RpmSense::reset()
     // trigger on rising edge
     TCCR1B |= _BV(ICES1);
     _timerOverflow = 0;
-    _events = 0;
     _isrLocked = false;
-    // none measured yet
-    _ticksIntegral = 0;
-    _lastSignalMillis = millis();
-    _ticksSum = 0;
-    _eventsSum = 0;
+    _counter = 0;
+    _lastTicks = TCNT1;
+    _events.clear();
 }
 
 // initialize capture timer for RPM sensing
@@ -62,22 +56,13 @@ void RpmSense::begin()
     reset();
 }
 
-// void RpmSense::setCallback(capture_timer_callback_t callback)
-// {
-//     _callback = callback;
-// }
-
-#if HAVE_GCC_OPTIMIZE_O3
-#    pragma GCC optimize("O3")
-#endif
-
 void RpmSense::_captureISR()
 {
     // +++ time critical part starts here
     // in order to capture all events, there must be enough clock cycles between each interrupt
     // for low RPM enable RPM_SENSE_TOGGLE_EDGE, for high rpm or when clock cycles are running out,
     // disable RPM_SENSE_TOGGLE_EDGE
-    auto counter = ICR1;
+    auto timerCounter = ICR1;
 
     #if RPM_SENSE_TOGGLE_EDGE
         // toggle edge
@@ -94,60 +79,64 @@ void RpmSense::_captureISR()
         // capture flag (ICF1) must be cleared by software (writing a logical one to the I/O bit location). For measuring frequency only,
         // the clearing of the ICF1 flag is not required (if an interrupt handler is used).
     #endif
-    _events++;
+    _counter++;
+    // once the rpm signal becomes too fast for the PID controller, an average value is used
+    //
+    // see RpmSensing::kMinRpmSignalPeriod etc..
+    //
+    // 120 rpm = 33333 ticks
+    // 1000 rpm = 4000 ticks
+    // 3000 rpm = 1333 ticks
+    // 5000 rpm = 800 ticks
+    // 7500 rpm = 533 ticks
+
     if (_isrLocked) {
         return;
     }
     _isrLocked = true;
-    // capture values we need for the calculation
-    uint32_t ticks = _timerOverflow;
-    auto events = _events;
-    // allow interrupts now
+    auto ticks = _timerOverflow;
+    auto counter = _counter;
+    // --- time critical part ends here, ~115 ticks
     sei();
-    // --- time critical part ends here
+    // uint16_t n = TCNT1;
+    // uint32_t x=micros();
 
-    // add the overflow counter as upper word and the captured counter as lower word
-    ticks = (ticks << 16) | counter;
+    ticks |= timerCounter;
 
     // get ticks passed since last interrupt
-    uint32_t diff = ticks - _lastTicks;
-    if (diff > 0x7fffffffUL) {
-        // _timerOverflow not incremented
-        diff += 1UL << 16;
-    }
-    uint32_t avgDiff = diff / events;
-
-    // update PID controller if enabled
-    if (motor.isVelocityMode() && motor.isOn()) {
-        pid.updateTicks(avgDiff);
-    }
-
-    cli();
-    // store ticks sum and counter to calculate an average RPM on demand
-    _ticksSum += diff;
-    _eventsSum += events;
-
-    // store last value for PID controller
-    if (_ticksIntegral == 0) {
-        _ticksIntegral = avgDiff;
-    }
-    else {
-        _ticksIntegral = (_ticksIntegral + avgDiff) >> 1;
-    }
-    _events -= events;
+    uint32_t diff = getTicksDiff(ticks, _lastTicks);
     _lastTicks = ticks;
 
-    // store time to detect a stall
-    _lastSignalMillis = millis();
-    _isrLocked = false;
+    diff /= counter;
+    _counter = 0;
 
-    // if (!_callbackLocked) {
-    //     // allow interrupts and make sure the callback is not called again until done
-    //     _callbackLocked = true;
-    //     sei();
-    //     _callback();
-    //     cli();
-    //     _callbackLocked = false;
+    _events._ticks += diff;
+    _events._count++;
+
+    // static int bla=0;
+    // bla++;
+    // if (bla%1000==0) {
+    //     int32_t x = n - timerCounter;
+    //     if (x < 0) {
+    //         x+=0x10000;
+    //     }
+    //     Serial.print(diff);
+    //     Serial.print(' ');
+    //     Serial.print(counter);
+    //     Serial.print(' ');
+    //     Serial.println(x);
     // }
+
+    // takes at least ~2800 ticks
+    pid.updateTicks(diff);
+
+    // static int bla=0;
+    // bla++;
+    // if (bla%1000==0) {
+    //     Serial.println(micros() - x);
+    // }
+
+    cli();
+    _isrLocked = false;
 }
 

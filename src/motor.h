@@ -68,7 +68,6 @@ inline Motor::Motor() :
     _mode(ControlModeEnum::PID),
     _state(MotorStateEnum::OFF),
     _maxPWM(MAX_DUTY_CYCLE),
-    // _dutyCycle(0),
     _maxStallTime(1000),
     _brake(true)
 {
