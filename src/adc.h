@@ -80,6 +80,7 @@ public:
     void begin();
 
     float getVoltage_V() const;
+    float getVoltageAvg_V() const;
     float getCurrent_A() const;
     float getPower_W() const;
 
@@ -99,8 +100,10 @@ public:
     volatile uint8_t _analogSource;
 
 private:
+    #if HAVE_VOLTAGE_DETECTION
+        uint32_t _voltageAverage;
+    #endif
     uint16_t _results[kNumChannels];
-
 
 #if DEBUG_ADC
 public:
@@ -117,6 +120,9 @@ extern ADCInterrupt adc;
 
 inline ADCInterrupt::ADCInterrupt() :
     _analogSource(0),
+    #if HAVE_VOLTAGE_DETECTION
+        _voltageAverage(0),
+    #endif
     _results{}
 {
 }
@@ -126,6 +132,11 @@ inline void ADCInterrupt::_selectNextSourcePin()
     // store collected values
     auto tmp = _sum;
     _results[_analogSource] = tmp;
+    #if HAVE_VOLTAGE_DETECTION
+        if (_analogSource == static_cast<uint8_t>(AnalogPinType::VOLTAGE)) {
+            _voltageAverage = ((_voltageAverage * 64) + (static_cast<uint32_t>(tmp) << 8)) / 65;
+        }
+    #endif
     _sum = 0;
 
     // reset counter
@@ -202,9 +213,22 @@ inline void ADCInterrupt::begin()
         return voltage * kVoltageMultiplier;
     }
 
+    inline float ADCInterrupt::getVoltageAvg_V() const
+    {
+        uint32_t voltage;
+        ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+            voltage = _voltageAverage;
+        }
+        return voltage * (kVoltageMultiplier / 256.0);
+    }
+
 #else
 
     float ADCInterrupt::getVoltage_V() const {
+        return NAN;
+    }
+
+    float ADCInterrupt::getVoltageAvg_V() const {
         return NAN;
     }
 
