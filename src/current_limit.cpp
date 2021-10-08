@@ -7,9 +7,9 @@
 #include "motor.h"
 #include "pid_control.h"
 
-CurrentLimit current_limit;
-
 #if HAVE_CURRENT_LIMIT
+
+CurrentLimit current_limit;
 
 uint8_t CurrentLimit::_getDutyCycle()
 {
@@ -21,20 +21,9 @@ uint8_t CurrentLimit::_getDutyCycle()
     }
 }
 
-void CurrentLimit::_resetDutyCycle()
-{
-    enable();
-    if (motor.isOn()) {
-        // restore pwm value if the motor is on
-        setMotorPWM_timer(_getDutyCycle());
-    }
-}
-
 ISR(TIMER1_COMPA_vect)
 {
     current_limit.timer1CompareMatchA();
 }
-
-#pragma GCC optimize("Os")
 
 #endif

@@ -7,15 +7,23 @@
 #include <Arduino.h>
 #include "main.h"
 
+#if HAVE_CURRENT_LIMIT
+
+//
+// once the over current signal triggers the interrupt, the interrupt is disabled and the timer started
+// the timer checks the over current signal and ramps up the duty cycle once the signal is off. the interrupt
+// is activated again as well to stop the motor quickly if the limit gets triggered between the timer
+// interval
+//
+
 class CurrentLimit {
 public:
     // interval to ramp up the duty cycle after the current limited had been tripped
     static constexpr uint16_t kCurrentLimitMicros = 128;
     static constexpr uint16_t kCurrentLimitTicks = Timer1::kTicksPerMicrosecond * kCurrentLimitMicros;
 
-    // while the comparator will limit at the set current (measured over 1-2ms depending on the RC filter), the
-    // average current will be less when running into the limit before the PWM has been ramped up again
-    static constexpr uint8_t kCurrentLimitShift = 1;
+    // ramp up current slowly to avoid trigger the current limit again
+    static constexpr uint8_t kCurrentLimitShift = 2;
     static constexpr uint16_t kCurrentLimitSteps = (1 << kCurrentLimitShift);
     static constexpr uint8_t kCurrentLimitMaxMultiplier = kCurrentLimitSteps - 1;
     static_assert(kCurrentLimitSteps <= 256, "limited to 256 steps");
@@ -42,6 +50,9 @@ public:
     // check if the limit is disabled
     bool isDisabled() const;
 
+    // check if the limit is enabled
+    bool isEnabled() const;
+
     // get vref pwm value
     uint8_t getLimit() const;
     float getLimitAmps() const;
@@ -49,8 +60,8 @@ public:
     // set vref pwm
     void setLimit(uint8_t limit);
 
-    // callback for the ISR of the overcurrent pin
-    void checkCurrentLimit(bool isTripped);
+    // callback for the ISR of the over current pin
+    void currentLimitTripped();
 
     // timer ISR that handles ramping up the duty cycle after over current
     void timer1CompareMatchA();
@@ -60,14 +71,12 @@ public:
 
 private:
     enum class CurrentLimitStateEnum : uint8_t {
-        DISABLED,
         NOT_TRIPPED,
         SIGNAL_HIGH,
         SIGNAL_LOW
     };
 
     uint8_t _getDutyCycle();
-    void _resetDutyCycle();
     void _enableTimer();
     void _disableTimer();
     void _resetTimer();
@@ -79,12 +88,10 @@ private:
 
 extern CurrentLimit current_limit;
 
-#if HAVE_CURRENT_LIMIT
-
 #include "motor.h"
 
 inline CurrentLimit::CurrentLimit() :
-    _limit(CURRENT_LIMIT_DISABLED),
+    _limit(ILimit::kDisabled),
     _limitMultiplier(kCurrentLimitMaxMultiplier),
     _state(CurrentLimitStateEnum::NOT_TRIPPED)
 {
@@ -95,38 +102,39 @@ inline void CurrentLimit::begin()
     setupCurrentLimitPwm();
     setupCurrentLimitLed();
 
-    #if PIN_CURRENT_LIMIT_OVERRIDE_PORT
-        sbi(PIN_CURRENT_LIMIT_OVERRIDE_PORT, PIN_CURRENT_LIMIT_OVERRIDE_BIT);
-        sbi(PIN_CURRENT_LIMIT_OVERRIDE_DDR, PIN_CURRENT_LIMIT_OVERRIDE_BIT);
-    #endif
+    asm volatile ("cbi %0, %1" :: "I" (SFR::Pin<PIN_CURRENT_LIMIT_INDICATOR>::DDR_IO_ADDR()), "I" (SFR::Pin<PIN_CURRENT_LIMIT_INDICATOR>::PINbit()));      // pin mode
 
-    cbi(PIN_CURRENT_LIMIT_INDICATOR_PORT, PIN_CURRENT_LIMIT_INDICATOR_BIT);
-    cbi(PIN_CURRENT_LIMIT_INDICATOR_DDR, PIN_CURRENT_LIMIT_INDICATOR_BIT);
 }
 
 inline void CurrentLimit::enable()
 {
-    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-        setCurrentLimitLedOff();
-        _state = (_limit == CURRENT_LIMIT_DISABLED) ? CurrentLimitStateEnum::DISABLED : CurrentLimitStateEnum::NOT_TRIPPED;
-        _limitMultiplier = kCurrentLimitMaxMultiplier;
-        _disableTimer();
+    setCurrentLimitLedOff();
+    _limitMultiplier = kCurrentLimitMaxMultiplier;
+    _disableTimer();
+    if (_limit == ILimit::kDisabled) {
+        currentLimitDisableInterrupt();
+    }
+    else {
+        _state = CurrentLimitStateEnum::NOT_TRIPPED;
+        currentLimitEnableInterrupt();
     }
 }
 
 inline void CurrentLimit::disable()
 {
-    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-        setCurrentLimitLedOff();
-        _state = CurrentLimitStateEnum::DISABLED;
-        _limitMultiplier = kCurrentLimitMaxMultiplier;
-        _disableTimer();
-    }
+    setCurrentLimitLedOff();
+    _disableTimer();
+    currentLimitDisableInterrupt();
 }
 
 inline bool CurrentLimit::isDisabled() const
 {
-    return _limit == CURRENT_LIMIT_DISABLED;
+    return _limit == ILimit::kDisabled;
+}
+
+inline bool CurrentLimit::isEnabled() const
+{
+    return _limit != ILimit::kDisabled;
 }
 
 inline uint8_t CurrentLimit::getLimit() const
@@ -144,26 +152,10 @@ inline void CurrentLimit::setLimit(uint8_t limit)
     ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
         _limitMultiplier = kCurrentLimitMaxMultiplier;
         _limit = limit;
-        if (_limit == CURRENT_LIMIT_DISABLED) {
-            _state = CurrentLimitStateEnum::DISABLED;
-        }
-        else {
+        if (_limit != ILimit::kDisabled) {
             _state = CurrentLimitStateEnum::NOT_TRIPPED;
         }
         analogWriteCurrentLimitPwm(_limit);
-
-        #if PIN_CURRENT_LIMIT_OVERRIDE_PORT
-            if (_limit == CURRENT_LIMIT_DISABLED) {
-                // set comparator vref to 5V >1000A
-                sbi(PIN_CURRENT_LIMIT_OVERRIDE_PORT, PIN_CURRENT_LIMIT_OVERRIDE_BIT);
-                sbi(PIN_CURRENT_LIMIT_OVERRIDE_DDR, PIN_CURRENT_LIMIT_OVERRIDE_BIT);
-            }
-            else {
-                // floating = use current limit
-                cbi(PIN_CURRENT_LIMIT_OVERRIDE_PORT, PIN_CURRENT_LIMIT_OVERRIDE_BIT);
-                cbi(PIN_CURRENT_LIMIT_OVERRIDE_DDR, PIN_CURRENT_LIMIT_OVERRIDE_BIT);
-            }
-        #endif
     }
 }
 
@@ -173,37 +165,6 @@ inline bool CurrentLimit::isLimitActive() const
         return _state > CurrentLimitStateEnum::NOT_TRIPPED;
     }
     __builtin_unreachable();
-}
-
-
-inline void CurrentLimit::checkCurrentLimit(bool tripped)
-{
-    // check if limit is enabled
-    switch(_state) {
-        case CurrentLimitStateEnum::DISABLED:
-            return;
-        case CurrentLimitStateEnum::SIGNAL_HIGH:
-            if (tripped) {
-                _limitMultiplier = 0;
-            }
-            else {
-                _state = CurrentLimitStateEnum::SIGNAL_LOW;
-            }
-            break;
-        case CurrentLimitStateEnum::SIGNAL_LOW:
-        case CurrentLimitStateEnum::NOT_TRIPPED:
-            if (tripped) {
-                if (motor.isOn()) {
-                    setMotorPWM_timer(CURRENT_LIMIT_MIN_DUTY_CYCLE);
-                }
-                _limitMultiplier = 0;
-                setCurrentLimitLedOn();
-                _state = CurrentLimitStateEnum::SIGNAL_HIGH;
-            }
-            break;
-    }
-    _resetTimer();
-    _enableTimer();
 }
 
 inline void CurrentLimit::_enableTimer()
@@ -223,107 +184,58 @@ inline void CurrentLimit::_resetTimer()
 
 inline uint8_t CurrentLimit::getDutyCycle(uint8_t dutyCycle)
 {
-    if (_state == CurrentLimit::CurrentLimitStateEnum::DISABLED) {
+    if (_limit == ILimit::kDisabled) {
         return dutyCycle;
     }
     if (_limitMultiplier == 0) {
-        return CURRENT_LIMIT_MIN_DUTY_CYCLE;
+        return ILimit::kLimitedDutyCycle;
     }
     if (_limitMultiplier == kCurrentLimitMaxMultiplier) {
         return dutyCycle;
     }
-    return std::max(CURRENT_LIMIT_MIN_DUTY_CYCLE, (dutyCycle * (_limitMultiplier + 1)) >> kCurrentLimitShift);
+    return std::max<uint8_t>(ILimit::kLimitedDutyCycle, (dutyCycle * (_limitMultiplier + 1)) >> kCurrentLimitShift);
+}
+
+// current limit ISR
+inline void CurrentLimit::currentLimitTripped()
+{
+    setMotorPWM_timer(ILimit::kLimitedDutyCycle);
+    // turn interrupt off, the timer will check the state
+    currentLimitDisableInterrupt();
+    setCurrentLimitLedOn();
+    _limitMultiplier = 0;
+    _state = CurrentLimitStateEnum::SIGNAL_HIGH;
+    _resetTimer();
+    _enableTimer();
 }
 
 inline void CurrentLimit::timer1CompareMatchA()
 {
-    // this method gets executed every kCurrentLimitTicks once the limit has been tripped
-    switch(_state) {
-        case CurrentLimitStateEnum::SIGNAL_LOW:
-            if (_limitMultiplier < kCurrentLimitMaxMultiplier) {
-                // increase multiplier until it reaches kCurrentLimitMaxMultiplier/100%
-                _limitMultiplier++;
-                if (motor.isOn()) {
-                    // set limited current
-                    setMotorPWM_timer(getDutyCycle(_getDutyCycle()));
-                }
-            }
-            else {
-                // marked as not tripped and restore pwm value
-                _resetDutyCycle();
-                return;
-            }
-            break;
-        case CurrentLimitStateEnum::SIGNAL_HIGH:
-            _limitMultiplier = 0;
-            if (motor.isOn()) {
-                // set to min. pwm value
-                setMotorPWM_timer(CURRENT_LIMIT_MIN_DUTY_CYCLE);
-            }
-            break;
-        case CurrentLimitStateEnum::DISABLED:
-            _resetDutyCycle();
-            break;
-        default:
-            break;
+    if (isCurrentLimitTripped()) {
+        currentLimitTripped();
     }
-    // reschedule
-    _resetTimer();
-}
-
-#else
-
-inline CurrentLimit::CurrentLimit()
-{
-}
-
-inline void CurrentLimit::begin()
-{
-    #ifdef PIN_CURRENT_LIMIT_PWM
-        analogWriteCurrentLimitPwm(255);
-    #endif
-
-    // #ifdef PIN_CURRENT_LIMIT_OVERRIDE_PORT
-    //     sbi(PIN_CURRENT_LIMIT_OVERRIDE_PORT, PIN_CURRENT_LIMIT_OVERRIDE_BIT);
-    //     sbi(PIN_CURRENT_LIMIT_OVERRIDE_DDR, PIN_CURRENT_LIMIT_OVERRIDE_BIT);
-    // #endif
-}
-
-// inline void CurrentLimit::disable()
-// {
-// }
-
-inline void CurrentLimit::enable()
-{
-}
-
-inline uint8_t CurrentLimit::getDutyCycle(uint8_t duty_cycle)
-{
-    return duty_cycle;
-}
-
-inline bool CurrentLimit::isDisabled() const
-{
-    return true;
-}
-
-inline uint8_t CurrentLimit::getLimit() const
-{
-    return 255;
-}
-
-inline void CurrentLimit::setLimit(uint8_t limit)
-{
-}
-
-
-inline uint8_t CurrentLimit::_getDutyCycle()
-{
-    return 0;
-}
-
-inline void CurrentLimit::_resetDutyCycle()
-{
+    else {
+        // enable interrupt again
+        currentLimitEnableInterrupt();
+        if (_limitMultiplier < kCurrentLimitMaxMultiplier) {
+            _state = CurrentLimitStateEnum::SIGNAL_LOW;
+            // increase multiplier until it reaches kCurrentLimitMaxMultiplier/100%
+            _limitMultiplier++;
+            // set limited current
+            setMotorPWM_timer(getDutyCycle(_getDutyCycle()));
+            _resetTimer();
+        }
+        else {
+            // marked as not tripped and restore pwm value
+            _state = CurrentLimitStateEnum::NOT_TRIPPED;
+            setCurrentLimitLedOff();
+            _disableTimer();
+            if (motor.isOn()) {
+                // restore pwm value if the motor is on
+                setMotorPWM(_getDutyCycle());
+            }
+        }
+    }
 }
 
 #endif

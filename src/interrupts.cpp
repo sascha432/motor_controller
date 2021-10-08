@@ -18,7 +18,26 @@ void pciSetup(byte pin)
     *digitalPinToPCMSK(pin) |= _BV(digitalPinToPCMSKbit(pin));
     PCIFR |= _BV(digitalPinToPCICRbit(pin));
     PCICR |= _BV(digitalPinToPCICRbit(pin));
+
+    #if 0
+    // pin 12 PCMSK0 PCMSKbit 4 PCICRbit 0
+    // pin 9 PCMSK0 PCMSKbit 1 PCICRbit 0
+    // pin 4 PCMSK2 PCMSKbit 4 PCICRbit 2
+    // pin 2 PCMSK2 PCMSKbit 2 PCICRbit 2
+    // pin 3 PCMSK2 PCMSKbit 3 PCICRbit 2
+
+    Serial.print(F("pin "));
+    Serial.print(pin);
+    Serial.print(F(" PCMSK"));
+    Serial.print((_SFR_MEM_ADDR(*digitalPinToPCMSK(pin)) - _SFR_MEM_ADDR((PCMSK0))));
+    Serial.print(F(" PCMSKbit "));
+    Serial.print(digitalPinToPCMSKbit(pin));
+    Serial.print(F(" PCICRbit "));
+    Serial.println(digitalPinToPCICRbit(pin));
+    #endif
 }
+
+// PIN_CURRENT_LIMIT_INDICATOR_PINNO
 
 // we need the encoder for updating values
 extern Encoder knob;
@@ -31,13 +50,37 @@ void setup_interrupts()
 {
     pinChangedFlag = PinChangedType::NONE;
     lastState.update();
-    #if HAVE_CURRENT_LIMIT
-        pciSetup(PIN_CURRENT_LIMIT_INDICATOR_PINNO);
+    #if 0
+
+        #if HAVE_CURRENT_LIMIT
+            pciSetup(PIN_CURRENT_LIMIT_INDICATOR_PINNO);
+        #endif
+        pciSetup(PIN_BUTTON1);
+        pciSetup(PIN_BUTTON2);
+        pciSetup(PIN_ROTARY_ENC_CLK);
+        pciSetup(PIN_ROTARY_ENC_DT);
+
+    #else
+
+        // optimized code -80byte
+        SFR::Pin<PIN_BUTTON1>::DDR() &= ~SFR::Pin<PIN_BUTTON1>::PINmask();
+        SFR::Pin<PIN_BUTTON2>::DDR() &= ~SFR::Pin<PIN_BUTTON2>::PINmask();
+        SFR::Pin<PIN_ROTARY_ENC_CLK>::DDR() &= ~SFR::Pin<PIN_ROTARY_ENC_CLK>::PINmask();
+        SFR::Pin<PIN_ROTARY_ENC_DT>::DDR() &= ~SFR::Pin<PIN_ROTARY_ENC_DT>::PINmask();
+
+        #if HAVE_CURRENT_LIMIT
+            SFR::Pin<PIN_CURRENT_LIMIT_INDICATOR>::DDR() &= ~SFR::Pin<PIN_CURRENT_LIMIT_INDICATOR>::PINmask();
+        #endif
+
+        // PCMSKx needs manual adjustments to match the port if pins change
+        PCMSK0 |= SFR::Pin<PIN_BUTTON1>::PINmask();
+        PCMSK2 |= SFR::Pin<PIN_BUTTON2>::PINmask() | SFR::Pin<PIN_ROTARY_ENC_CLK>::PINmask() | SFR::Pin<PIN_ROTARY_ENC_DT>::PINmask();
+
+        PCIFR |= PIN_CURRENT_LIMIT_INDICATOR_PCICR_BV | PIN_BUTTON1_PCICR_BV | PIN_BUTTON2_PCICR_BV | PIN_ROTARY_ENC_CLK_PCICR_BV | PIN_ROTARY_ENC_CLK_PCICR_BV;
+        PCICR |= PIN_CURRENT_LIMIT_INDICATOR_PCICR_BV | PIN_BUTTON1_PCICR_BV | PIN_BUTTON2_PCICR_BV | PIN_ROTARY_ENC_CLK_PCICR_BV | PIN_ROTARY_ENC_CLK_PCICR_BV;
+
     #endif
-    pciSetup(PIN_BUTTON1);
-    pciSetup(PIN_BUTTON2);
-    pciSetup(PIN_ROTARY_ENC_CLK);
-    pciSetup(PIN_ROTARY_ENC_DT);
+
 }
 
 // pin change interrupt handler
@@ -47,8 +90,8 @@ void check_interrupt_level_change(PinChangedState::ChangeSetIntType change_set)
 {
     #if HAVE_CURRENT_LIMIT
 
-        if (lastState.changed<PIN_CURRENT_LIMIT_INDICATOR_PCHS_PORT, PIN_CURRENT_LIMIT_INDICATOR_BIT>(change_set)) {
-            current_limit.checkCurrentLimit(isCurrentLimitTripped());
+        if (isCurrentLimitTripped()) {
+            current_limit.currentLimitTripped();
         }
 
     #endif
@@ -58,14 +101,14 @@ void check_interrupt_level_change(PinChangedState::ChangeSetIntType change_set)
     // buttons should have a decent amount of capacitance added to avoid bouncing and creating unnecessary interrupts
     // to have a good noise immunity use small resistors and big capacitors
     // rise/fall time 5-10ms
-    if (lastState.changed<PIN_BUTTON1_PORT, PIN_BUTTON1_BIT>(change_set)) {
+    if (lastState.changed<PIN_BUTTON1_PORT, SFR::Pin<PIN_BUTTON1>::PINbit()>(change_set)) {
         tmpFlag |= PinChangedType::BUTTON1;
     }
-    if (lastState.changed<PIN_BUTTON2_PORT, PIN_BUTTON2_BIT>(change_set)) {
+    if (lastState.changed<PIN_BUTTON2_PORT, SFR::Pin<PIN_BUTTON2>::PINbit()>(change_set)) {
         tmpFlag |= PinChangedType::BUTTON2;
     }
 
-    if (lastState.changed<PIN_ROTARY_ENC_CLK_PORT, PIN_ROTARY_ENC_CLK_BIT>(change_set) || lastState.changed<PIN_ROTARY_ENC_DT_PORT, PIN_ROTARY_ENC_DT_BIT>(change_set)) {
+    if (lastState.changed<PIN_ROTARY_ENC_CLK_PORT, SFR::Pin<PIN_ROTARY_ENC_CLK>::PINbit()>(change_set) || lastState.changed<PIN_ROTARY_ENC_DT_PORT, SFR::Pin<PIN_ROTARY_ENC_DT>::PINbit()>(change_set)) {
         // the encoder pins should have some hardware debouncing in order to reduce the number of unnecessary interrupts
         // this can be a lot depending on the quality of the encoder. the capacitance of the filter should be low enough to
         // catch fast turns but filter noise and bouncing
