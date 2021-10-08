@@ -33,9 +33,6 @@ public:
     uint8_t getMaxDutyCycle() const;
     void setMaxDutyCycle(uint8_t maxPWM);
 
-    // uint8_t getDutyCycle() const;
-    // void setDutyCycle(uint8_t dutyCycle);
-
     uint16_t getMaxStallTime() const;
     void setMaxStallTime(uint16_t maxStallTime);
 
@@ -50,15 +47,14 @@ private:
     // set pulse length in velocity mode from set point/poti value
     void _calcPulseLength();
 
-public:
-    uint32_t _startTime;
+// public:
+//     uint32_t _startTime;
 
 private:
     ControlModeEnum _mode;
     volatile MotorStateEnum _state;
     uint8_t _maxPWM;
-    // uint8_t _dutyCycle;
-    uint16_t _maxStallTime;
+     uint16_t _maxStallTime;
     bool _brake;
 };
 
@@ -111,35 +107,13 @@ inline bool Motor::isVelocityMode() const
 
 inline bool Motor::isDutyCycleMode() const
 {
-    return _mode == ControlModeEnum::DUTY_CYCLE;
+    return _mode == ControlModeEnum::PWM;
 }
 
 inline uint8_t Motor::getMaxDutyCycle() const
 {
     return _maxPWM;
 }
-
-// inline uint8_t getMotorPWM_timer();
-// inline void setMotorPWM(uint8_t pwm);
-// inline void stopMotor();
-
-// inline uint8_t Motor::getDutyCycle() const
-// {
-//     return getMotorPWM_timer();
-// }
-
-// inline void Motor::setDutyCycle(uint8_t dutyCycle)
-// {
-//     ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-//         if (dutyCycle) {
-//             setMotorPWM(dutyCycle);
-//         }
-//         else {
-//             stopMotor();
-//         }
-//     }
-//     // _dutyCycle = dutyCycle;
-// }
 
 inline uint16_t Motor::getMaxStallTime() const
 {
@@ -193,14 +167,14 @@ inline void Motor::setBrake(bool state)
             Serial.printf_P(PSTR("%lu: set brake low\n"), millis());
         #endif
         setBrakeOff();
-        delayMicroseconds(50);
+        delayMicroseconds(500);
     }
 }
 
 inline const __FlashStringHelper *Motor::_getMode(ControlModeEnum mode)
 {
     switch(mode) {
-        case ControlModeEnum::DUTY_CYCLE:
+        case ControlModeEnum::PWM:
             return F("DC");
         case ControlModeEnum::PID:
             return F("PID");
@@ -227,7 +201,7 @@ inline const __FlashStringHelper *Motor::_getState(MotorStateEnum state) {
 inline void Motor::toggleMode()
 {
     if (isVelocityMode()) {
-        setMode(ControlModeEnum::DUTY_CYCLE);
+        setMode(ControlModeEnum::PWM);
     }
     else {
         setMode(ControlModeEnum::PID);
@@ -236,10 +210,5 @@ inline void Motor::toggleMode()
 
 inline void Motor::setMode(ControlModeEnum mode)
 {
-    if (_state != MotorStateEnum::ON) {
-        #if DEBUG_MOTOR_SPEED
-            Serial.printf_P(PSTR("set_mode=%u\n"), (int)_mode);
-        #endif
-        _mode = mode;
-    }
+    _mode = mode;
 }

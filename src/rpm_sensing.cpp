@@ -23,8 +23,6 @@ ISR(TIMER1_CAPT_vect)
     rpm_sense._captureISR();
 }
 
-#pragma GCC optimize("Os")
-
 RpmSense::RpmSense()
 {
     reset();
@@ -45,7 +43,7 @@ void RpmSense::reset()
 // initialize capture timer for RPM sensing
 void RpmSense::begin()
 {
-    pinMode(PIN_RPM_SIGNAL, INPUT);
+    asm volatile ("cbi %0, %1" :: "I" (SFR::Pin<PIN_RPM_SIGNAL>::DDR_IO_ADDR()), "I" (SFR::Pin<PIN_RPM_SIGNAL>::PINbit()));
 
     TCCR1B |= _BV(ICES1);
     // clear flags
@@ -98,8 +96,6 @@ void RpmSense::_captureISR()
     auto counter = _counter;
     // --- time critical part ends here, ~115 ticks
     sei();
-    // uint16_t n = TCNT1;
-    // uint32_t x=micros();
 
     ticks |= timerCounter;
 
@@ -113,28 +109,10 @@ void RpmSense::_captureISR()
     _events._ticks += diff;
     _events._count++;
 
-    // static int bla=0;
-    // bla++;
-    // if (bla%1000==0) {
-    //     int32_t x = n - timerCounter;
-    //     if (x < 0) {
-    //         x+=0x10000;
-    //     }
-    //     Serial.print(diff);
-    //     Serial.print(' ');
-    //     Serial.print(counter);
-    //     Serial.print(' ');
-    //     Serial.println(x);
-    // }
-
-    // takes at least ~2800 ticks
-    pid.updateTicks(diff);
-
-    // static int bla=0;
-    // bla++;
-    // if (bla%1000==0) {
-    //     Serial.println(micros() - x);
-    // }
+    if (motor.isVelocityMode()) {
+        // takes at least ~2800 ticks
+        pid.updateTicks(diff);
+    }
 
     cli();
     _isrLocked = false;

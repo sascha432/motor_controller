@@ -26,8 +26,8 @@
 ConfigData data;
 UIConfigData ui_data;
 Encoder knob(PIN_ROTARY_ENC_CLK, PIN_ROTARY_ENC_DT);
-InterruptPushButton<PIN_BUTTON1_PORT, _BV(PIN_BUTTON1_BIT)> button1(PIN_BUTTON1, PRESSED_WHEN_LOW | ENABLE_INTERNAL_PULLUP);
-InterruptPushButton<PIN_BUTTON2_PORT, _BV(PIN_BUTTON2_BIT)> button2(PIN_BUTTON2, PRESSED_WHEN_LOW | ENABLE_INTERNAL_PULLUP);
+InterruptPushButton<PIN_BUTTON1_PORT, SFR::Pin<PIN_BUTTON1>::PINmask()> button1(PIN_BUTTON1, PRESSED_WHEN_LOW | ENABLE_INTERNAL_PULLUP);
+InterruptPushButton<PIN_BUTTON2_PORT, SFR::Pin<PIN_BUTTON2>::PINmask()> button2(PIN_BUTTON2, PRESSED_WHEN_LOW | ENABLE_INTERNAL_PULLUP);
 
 #if (ADAFRUIT_SSD1306_FIXED_SIZE == 0) || (ADAFRUIT_SSD1306_FIXED_WIDTH != SCREEN_WIDTH || ADAFRUIT_SSD1306_FIXED_HEIGHT != SCREEN_HEIGHT)
 #    error invalid settings
@@ -127,17 +127,30 @@ void set_version(char *buffer)
     sprintf_P(buffer, PSTR("Version %u.%u.%u"), VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
 }
 
+bool displayInitialized = false;
+
 bool setup_display_begin()
 {
-    Wire.setClock(400000);
+
     if (display.begin(OLED_ADDRESS, OLED_ADDRESS)) {
         return true;
     }
-    Wire.setClock(100000);
-    if (display.begin(OLED_ADDRESS, OLED_ADDRESS)) {
-        return true;
-    }
+    // Wire.setClock(100000);
+    // if (display.begin(OLED_ADDRESS, OLED_ADDRESS)) {
+    //     return true;
+    // }
     return false;
+}
+
+void setup_display_init()
+{
+    displayInitialized = true;
+    display.setTextColor(WHITE);
+    display.cp437(true);
+
+    display.clearDisplay();
+    display.display();
+    ui_data.refreshDisplay();
 }
 
 // setup and clear display
@@ -159,12 +172,7 @@ void setup_display()
     while((time = (millis16() - start)) < Timeouts::kBootDelay);
 
     if (setup_display_begin()) {
-        display.setTextColor(WHITE);
-        display.cp437(true);
-
-        display.clearDisplay();
-        display.display();
-        ui_data.refreshDisplay();
+        setup_display_init();
     }
 }
 
@@ -238,6 +246,16 @@ void refresh_display()
     }
     else if (!menu.isOpen() && ui_data.doRefreshDisplay())  {
         ui_data.updateTimer();
+
+        if (!displayInitialized) { //TODO
+            setCurrentLimitLedOn();
+            delay(1000);
+            setCurrentLimitLedOff();
+            Serial.println(F("DISPLAY REINIT"));
+            if (setup_display_begin()) {
+                setup_display_init();
+            }
+        }
 
         display.clearDisplay();
         display.setTextSize(1);
@@ -387,12 +405,12 @@ void menu_display_submenu()
 
         #if HAVE_VOLTAGE_DETECTION
             display.print(F("VCC "));
-            display.print(adc.getVoltage_V(), 2);
+            display.print(adc.getVoltageAvg_V(), 2);
             display.print('V');
         #endif
         #if HAVE_CURRENT_LIMIT
-            if (!current_limit.isDisabled()) {
-                display.print(F("Imax "));
+            if (current_limit.isEnabled()) {
+                display.print(F(" max "));
                 display.print(current_limit.getLimitAmps(), 1);
                 display.print('A');
             }
@@ -473,25 +491,25 @@ void menu_display_submenu()
 bool update_motor_settings(int16_t value)
 {
     if (value) {
-        if (data.pidConfig() == PidConfigEnum::OFF) {
-            data.changeSetPoint(value);
-            return true;
-        }
-        else {
-            if (data.pidConfig() == PidConfigEnum::SAVE) {
-                write_eeprom();
+        switch(data.pidConfig()) {
+            case PidConfigEnum::SAVE:
+                // reset menu
                 data.pidConfig() = PidConfigEnum::OFF;
+                write_eeprom();
                 return false;
-            }
-            else if (data.pidConfig() == PidConfigEnum::RESTORE) {
+            case PidConfigEnum::OFF:
+                data.changeSetPoint(value);
+                break;
+            case PidConfigEnum::RESTORE:
                 pid.resetPidValues();
                 pid.reset();
+                // jump back to first item
                 data.pidConfig() = PidConfigEnum::KP;
-            }
-        }
-        if (data.pidConfig() != PidConfigEnum::OFF) {
-            pid.updatePidValue(data.pidConfig(), value);
-            pid.reset();
+                break;
+            default:
+                pid.updatePidValue(data.pidConfig(), value);
+                pid.reset();
+                break;
         }
         return true;
     }
@@ -559,13 +577,13 @@ void start_stop_button_pressed(Button& btn)
 {
     // skip check if the menu is open
     if (menu.isClosed()) {
-        if (motor.getState() != MotorStateEnum::ON) {
-            knob.write(0);
-            motor.start();
-        }
-        else if (motor.isOn()) {
+        if (motor.isOn()) {
             motor.stop(MotorStateEnum::BRAKING);
             menu.close();
+        }
+        else {
+            knob.write(0);
+            motor.start();
         }
     }
     else {
@@ -598,11 +616,11 @@ void read_rotary_encoder()
             #if HAVE_CURRENT_LIMIT
                 case MenuEnum::MENU_CURRENT: {
                     int16_t new_value = current_limit.getLimit() + KNOB_GET_VALUE(value, KNOB_VALUE_SPEED);
-                    if (new_value >= CURRENT_LIMIT_MAX && value > 0) {
-                        current_limit.setLimit(CURRENT_LIMIT_DISABLED);
+                    if (new_value >= ILimit::kMax && value > 0) {
+                        current_limit.setLimit(ILimit::kDisabled);
                     }
                     else {
-                        current_limit.setLimit(std::clamp<int16_t>(new_value, CURRENT_LIMIT_MIN, CURRENT_LIMIT_MAX));
+                        current_limit.setLimit(std::clamp<int16_t>(new_value, ILimit::kMin, ILimit::kMax));
                     }
                 } break;
             #endif
@@ -646,10 +664,10 @@ void setup()
     current_limit.begin();
 
     #if HAVE_VOLTAGE_DETECTION
-        pinMode(PIN_VOLTAGE, INPUT);
+        asm volatile ("cbi %0, %1" :: "I" (SFR::Pin<PIN_VOLTAGE>::DDR_IO_ADDR()), "I" (SFR::Pin<PIN_VOLTAGE>::PINbit()));
     #endif
     #if HAVE_CURRENT_DETECTION
-        pinMode(PIN_CURRENT, INPUT);
+        asm volatile ("cbi %0, %1" :: "I" (SFR::Pin<PIN_CURRENT>::DDR_IO_ADDR()), "I" (SFR::Pin<PIN_CURRENT>::PINbit()));
     #endif
     #if HAVE_VOLTAGE_DETECTION || HAVE_CURRENT_DETECTION
         adc.begin();
@@ -659,6 +677,7 @@ void setup()
     button2.onRelease(rotary_button_released);
 
     read_eeprom();
+    Wire.setClock(400000);
     setup_display();
     menu.add(menuItemsString);
 
@@ -678,8 +697,6 @@ void setup()
         Serial.println(FPSTR(__compile_date__));
     #endif
     display_message(message, Timeouts::kVersion, 1);
-
-    current_limit.enable();
 
     knob.setAcceleration(KNOB_ACCELERATION);
 }
@@ -743,118 +760,107 @@ void serial_commands() {
         char ch = Serial.read();
         Serial.print(ch);
         switch(ch) {
-            case 'R':
-                restart_device();
-                break;
-            #if HAVE_SERIAL_HELP
-                case 'h':
-                case '?':
-                    Serial.print(F(
-                        "h, ?                       Display help\n"
-                        "i                          Open info menu\n"
-                        "b                          Toggle brake\n"
-                        #if HAVE_SERIAL_MOTOR_CONTROL
-                        "d                          Set motor to DC (duty cycle)\n"
-                        "r                          Set motor to PID controlled\n"
-                        "+, *                       Increase DC or RPM\n"
-                        "-, /                       Decrease DC or RPM\n"
-                        #endif
-                        "l                          Toggle LED brightness\n"
-                        #if HAVE_VOLTAGE_DETECTION
-                        "v                          Display voltage\n"
-                        #endif
-                        #if HAVE_CURRENT_DETECTION
-                        "V                          Display current\n"
-                        #endif
-                    ));
+            #if 0
+                case 'R':
+                    restart_device();
                     break;
             #endif
-#if 0
-            case 'i':
-                menu.open();
-                menu.setPosition(MenuEnum::MENU_INFO);
-                menu.enter();
-                break;
-            #if HAVE_LED_POWER
-                case 'l': {
-                        if (data._ledBrightness < LED_MIN_PWM) {
-                            data._ledBrightness = LED_MIN_PWM;
-                        }
-                        else if (data._ledBrightness == LED_MAX_PWM) {
-                            data._ledBrightness = LED_MIN_PWM - 1;
-                        }
-                        else {
-                            data._ledBrightness = std::min(data._ledBrightness + ((data._ledBrightness >= 230) ? 1 : (data._ledBrightness >= 200) ? 4 : 16), LED_MAX_PWM);
-                        }
-                        Serial.printf_P(PSTR("led %u pwm %umW\n"), data._ledBrightness, LED_POWER_mW(data._ledBrightness));
-                    }
+            #if 0
+                case 'i':
+                    menu.open();
+                    menu.setPosition(MenuEnum::MENU_INFO);
+                    menu.enter();
                     break;
             #endif
-#endif
-#if 0
-            case 'I': {
-                uint16_t minRpm = ~0;
-                uint16_t maxRpm = 0;
-                uint32_t sumRpm = 0;
-                uint8_t counter = 0;
-                auto mode = motor.getMode();
-                motor.setMode(ControlModeEnum::DUTY_CYCLE);
-                motor.setDutyCycle(32);
-                motor.start();
-                auto avg = 64;
-                for(uint8_t i = 20; i < 200; i += 10) {
-                    if (!motor.isOn()) {
+            #if 0
+                #if HAVE_LED_POWER
+                    case 'l': {
+                            if (data._ledBrightness < LED_MIN_PWM) {
+                                data._ledBrightness = LED_MIN_PWM;
+                            }
+                            else if (data._ledBrightness == LED_MAX_PWM) {
+                                data._ledBrightness = LED_MIN_PWM - 1;
+                            }
+                            else {
+                                data._ledBrightness = std::min(data._ledBrightness + ((data._ledBrightness >= 230) ? 1 : (data._ledBrightness >= 200) ? 4 : 16), LED_MAX_PWM);
+                            }
+                            Serial.printf_P(PSTR("led %u pwm %umW\n"), data._ledBrightness, LED_POWER_mW(data._ledBrightness));
+                        }
                         break;
-                    }
-                    motor.setSpeed(i);
-                    data.rpm_sense_average = 64;
-                    delay(2500);
-                    uint16_t rpm = RPM_SENSE_TICKS_TO_RPM(ui_data._displayRpm);
-                    auto U = adc.getVoltage_V();
-                    Serial.printf_P(PSTR("%u %u %u "), i, U, rpm);
-                    auto effU = ((U * i) / 255) - 0.68/*switching and cable losses*/;
-                    auto rpmPerVolt = rpm / effU;
-                    minRpm = std::min<float>(rpmPerVolt, minRpm);
-                    maxRpm = std::max<float>(rpmPerVolt, maxRpm);
-                    sumRpm += rpmPerVolt;
-                    counter++;
-                    Serial.println(rpmPerVolt);
-                }
-                motor.stop();
-                motor.setMode(mode);
-                data.rpm_sense_average = avg;
-                Serial.printf_P(PSTR("rpm/V avg=%u median=%u min=%u max=%u points=%u\n"), (unsigned)(sumRpm / counter), (unsigned)((minRpm + maxRpm) / 2), minRpm, maxRpm, counter);
-            } break;
-#endif
-#if 0
-            #if HAVE_VOLTAGE_DETECTION && HAVE_CURRENT_DETECTION
-                case 'A':
-                    Serial.print(F("ADC "));
-                    Serial_flush_input();
-                    for(uint8_t i = 0; i < 100; i++) {
-                        Serial.print(adc.getVoltage_V(), 3);
-                        Serial.print(' ');
-                        Serial.print(adc.getCurrent_A(), 3);
-                        Serial.print(' ');
-                        Serial.print(adc.getPower_W(), 3);
-                        Serial.print(' ');
-                        Serial.print(adc.getADCAvg(0));
-                        Serial.print(' ');
-                        Serial.print(adc.getADCAvg(1));
-                        Serial.println();
-                        delay(250);
-                        if (Serial.available()) {
-                            Serial_flush_input();
+                #endif
+            #endif
+            #if 0
+                case 'I': {
+                    uint16_t minRpm = ~0;
+                    uint16_t maxRpm = 0;
+                    uint32_t sumRpm = 0;
+                    uint8_t counter = 0;
+                    auto mode = motor.getMode();
+                    motor.setMode(ControlModeEnum::PWM);
+                    motor.setDutyCycle(32);
+                    motor.start();
+                    auto avg = 64;
+                    for(uint8_t i = 20; i < 200; i += 10) {
+                        if (!motor.isOn()) {
                             break;
                         }
+                        motor.setSpeed(i);
+                        data.rpm_sense_average = 64;
+                        delay(2500);
+                        uint16_t rpm = RPM_SENSE_TICKS_TO_RPM(ui_data._displayRpm);
+                        auto U = adc.getVoltage_V();
+                        Serial.printf_P(PSTR("%u %u %u "), i, U, rpm);
+                        auto effU = ((U * i) / 255) - 0.68/*switching and cable losses*/;
+                        auto rpmPerVolt = rpm / effU;
+                        minRpm = std::min<float>(rpmPerVolt, minRpm);
+                        maxRpm = std::max<float>(rpmPerVolt, maxRpm);
+                        sumRpm += rpmPerVolt;
+                        counter++;
+                        Serial.println(rpmPerVolt);
                     }
-                    Serial.println();
-                    break;
+                    motor.stop();
+                    motor.setMode(mode);
+                    data.rpm_sense_average = avg;
+                    Serial.printf_P(PSTR("rpm/V avg=%u median=%u min=%u max=%u points=%u\n"), (unsigned)(sumRpm / counter), (unsigned)((minRpm + maxRpm) / 2), minRpm, maxRpm, counter);
+                } break;
             #endif
-#endif
+            #if 0
+            #if HAVE_VOLTAGE_DETECTION && HAVE_CURRENT_DETECTION
+                case 'A': {
+                        Serial.print(F("ADC "));
+                        Serial_flush_input();
+                        float sum = 0;
+                        uint16_t count = 0;
+                        for(uint8_t i = 0; i < 100; i++) {
+                            float U = adc.getVoltage_V();
+                            sum += U;
+                            count++;
+                            Serial.print(U, 3);
+                            Serial.print(' ');
+                            Serial.print(sum / count, 3);
+                            Serial.print(' ');
+                            Serial.print(adc.getVoltageAvg_V(), 3);
+                            Serial.print(' ');
+                            Serial.print(adc.getCurrent_A(), 3);
+                            Serial.print(' ');
+                            Serial.print(adc.getPower_W(), 3);
+                            Serial.print(' ');
+                            Serial.print(adc.getADCAvg(0));
+                            Serial.print(' ');
+                            Serial.print(adc.getADCAvg(1));
+                            Serial.println();
+                            delay(250);
+                            if (Serial.available()) {
+                                Serial_flush_input();
+                                break;
+                            }
+                        }
+                        Serial.println();
+                    } break;
+            #endif
+            #endif
             #if 1
                 case 'e':
-                    // print_pid_cfg_serial();
                     pid.printValues(Serial);
                     break;
                 case 'w':
@@ -863,7 +869,6 @@ void serial_commands() {
                     break;
                 case 'S':
                     start_stop_button_pressed(*(Button *)(nullptr));
-                    // motor.dump(Serial);
                     break;
                 #endif
             #if 0
@@ -890,12 +895,16 @@ void serial_commands() {
             #endif
             #if HAVE_SERIAL_MOTOR_CONTROL
                 case 'd':
-                    motor.setMode(ControlModeEnum::DUTY_CYCLE);
-                    motor.dump(Serial);
+                    if (motor.isOff()) {
+                        motor.setMode(ControlModeEnum::PWM);
+                        Serial.println(F("PWM"));
+                    }
                     break;
                 case 'r':
-                    motor.setMode(ControlModeEnum::PID);
-                    motor.dump(Serial);
+                    if (motor.isOff()) {
+                        motor.setMode(ControlModeEnum::PID);
+                        Serial.println(F("PID"));
+                    }
                     break;
             #endif
             #if HAVE_SERIAL_MOTOR_CONTROL
@@ -913,13 +922,6 @@ void serial_commands() {
             #endif
         }
     }
-#endif
-
-    #if DEBUG_ADC
-        EVERY_N_MILLIS(1000) {
-            adc.printReadingsPerSecond();
-        }
-
 #endif
 }
 

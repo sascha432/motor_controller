@@ -20,8 +20,8 @@ void Motor::loop()
         // check if the RPM signal has not been updated for a given period of time
         auto last = rpm_sense.getLastSignalTicks();
         if (last > _maxStallTime * Timer1::kTicksPerMillisecond) {
-            Serial.print(F("last signal "));
-            Serial.println(last/Timer1::kTicksPerMillisecond);
+            // Serial.print(F("last signal "));
+            // Serial.println(last/Timer1::kTicksPerMillisecond);
             #if DEBUG_MOTOR_SPEED
                 if (motor.isOn()) {
                     Serial.printf_P(PSTR("dur=%lu max=%u\n"), dur, _maxStallTime);
@@ -45,23 +45,24 @@ void Motor::loop()
 
 void Motor::start()
 {
-    if (isBrakeOn()) {
-        // if the brake is still engaged, for example when turning the motor off and on quickly
-        // turn the brake off, update the display and wait 100ms
-        #if DEBUG_MOTOR_SPEED
-            Serial.print(F("brake_on"));
-        #endif
-        setBrake(false);
-        ui_data.refreshDisplay();
-        refresh_display();
-        delay(100);
+    // if (isBrakeOn()) {
+    //     // if the brake is still engaged, for example when turning the motor off and on quickly
+    //     // turn the brake off, update the display and wait 100ms
+    //     #if DEBUG_MOTOR_SPEED
+    //         Serial.print(F("brake_on"));
+    //     #endif
+    //     setBrake(false);
+    //     ui_data.refreshDisplay();
+    //     refresh_display();
+    //     delay(100);
 
-        // make sure it is off
-        if (isBrakeOn()) {
-            stop(MotorStateEnum::ERROR);
-            return;
-        }
-    }
+    //     // make sure it is off
+    //     if (isBrakeOn()) {
+    //         stop(MotorStateEnum::ERROR);
+    //         return;
+    //     }
+    // }
+    setBrake(false);
 
     ATOMIC_BLOCK(ATOMIC_FORCEON) {
         // enable WDT to restart in case of a crash while the motor is running
@@ -70,7 +71,7 @@ void Motor::start()
         // reset ui data
         ui_data = {};
         _state = MotorStateEnum::ON;
-        _startTime = micros();
+        // _startTime = micros();
 
         // reset rpm sensing and pid controller
         rpm_sense.reset();
@@ -95,6 +96,7 @@ void Motor::stop(MotorStateEnum state)
     ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
         _state = state;
         setSpeed(0);
+        current_limit.disable();
     }
 
     const __FlashStringHelper *message;
@@ -115,7 +117,6 @@ void Motor::stop(MotorStateEnum state)
     display_message(message, Timeouts::Menu::kMessage);
     data.pidConfig() = PidConfigEnum::OFF;
 
-    current_limit.enable();
     wdt_disable();
 }
 
@@ -124,13 +125,15 @@ void Motor::stop(MotorStateEnum state)
 // the PID controller does not use this method
 void Motor::setSpeed(uint8_t speed)
 {
-    if (!isOn() && speed != 0) {
-        #if DEBUG_MOTOR_SPEED
-            Serial.print(F("error_speed"));
-        #endif
-        stop(MotorStateEnum::ERROR);
-        return;
-    }
+    #if DEBUG
+        if (!isOn() && speed != 0) {
+            #if DEBUG_MOTOR_SPEED
+                Serial.print(F("error_speed"));
+            #endif
+            stop(MotorStateEnum::ERROR);
+            return;
+        }
+    #endif
     if (speed > _maxPWM) {
         speed = _maxPWM;
     }

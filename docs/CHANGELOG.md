@@ -1,13 +1,18 @@
 # Changelog
 
+## 1.0.5-dev
+
+  - Fixed PWM mode running in velocity mode
+  - Inverted current limit signal to match PCB Rev1.5
+  - Improved current limit
+  - Displaying average voltage to get rid of ADC noise
+
 ## 1.0.4
 
  - Using size optimized version of Adafruit SSD1306 to free 4.2KB flash memory
  - Using rising and falling edge for RPM detection to work more precisely
  - Reduced clock cycles required for the capture ISR
  - Added inline assembler for time critical parts
- - Motor setting RPM/Volt for minimum duty cycle and pid controller
- - Command to test no load RPM/Volt
  - Reset defaults menu
  - Changed voltage detection analog reference to 1.1V
  - Reading buttons and rotary encoder via pin change interrupt
@@ -16,8 +21,7 @@
  - New rotary encoder algorithm with debouncing
  - Interrupt driven free running ADC
  - Replaced analogWrite to reduce code size
- - Displaying motor current while running
- - Option to display Ampere or Watt while running
+ - Display motor current or power while running
  - Enabled WDT while motor is running to turn it off if the software hangs
  - Rewritten the PID controller
 

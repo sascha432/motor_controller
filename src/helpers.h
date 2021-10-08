@@ -283,8 +283,6 @@ inline uint16_t micros16()
 }
 
 
-#pragma GCC optimize("Os")
-
 class PrintBuffer : public Print {
 public:
     PrintBuffer(char *buffer, uint8_t size) : _buffer(buffer), _size(size) {

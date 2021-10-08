@@ -15,11 +15,12 @@
 #include <Encoder.h>
 #include <Adafruit_SSD1306.h>
 #include "helpers.h"
+#include "avr_reg.h"
 #include "int24_types.h"
 
 #define VERSION_MAJOR                           1
 #define VERSION_MINOR                           0
-#define VERSION_PATCH                           4
+#define VERSION_PATCH                           5
 
 // show at what time and date the firmware was compiled
 #ifndef HAVE_COMPILED_ON_DATE
@@ -45,12 +46,6 @@
 // disable LED support
 #ifndef HAVE_LED
 #define HAVE_LED                                1
-#endif
-
-// display help for serial commands when pressing ? or h
-// ~276 byte
-#ifndef HAVE_SERIAL_HELP
-#define HAVE_SERIAL_HELP                        0
 #endif
 
 // enable serial commands
@@ -87,29 +82,22 @@
 
 // D11/PB3/15
 // pin for the mosfet driver. analogWrite is pretty slow (and adds quite some extra code)
-#define PIN_MOTOR_PWM_PIN                       PINB
-#define PIN_MOTOR_PWM_DDR                       DDRB
-#define PIN_MOTOR_PWM_PORT                      PORTB
-#define PIN_MOTOR_PWM_BIT                       PINB3
-#define PIN_MOTOR_PWM_OCR                       OCR2A
-#define PIN_MOTOR_ENABLE_PWM()                  sbi(TCCR2A, COM2A1)
-#define PIN_MOTOR_DISABLE_PWM()                 cbi(TCCR2A, COM2A1)
+#define PIN_MOTOR_PWM                           11
+#define PIN_MOTOR_ENABLE_PWM()                  sbi(_SFR_MEM8(SFR::Pin<PIN_MOTOR_PWM>::TCCR_MEM_ADDR()), SFR::Pin<PIN_MOTOR_PWM>::TCCRbit())
+#define PIN_MOTOR_DISABLE_PWM()                 cbi(_SFR_MEM8(SFR::Pin<PIN_MOTOR_PWM>::TCCR_MEM_ADDR()), SFR::Pin<PIN_MOTOR_PWM>::TCCRbit())
 
 inline void stopMotor()
 {
     PIN_MOTOR_DISABLE_PWM();
-    PIN_MOTOR_PWM_OCR = 0;
-    asm volatile ("cbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_MOTOR_PWM_PORT)), "I" (PIN_MOTOR_PWM_BIT));     // digital write low
+    SFR::Pin<PIN_MOTOR_PWM>::OCR() = 0;
+    asm volatile ("cbi %0, %1" :: "I" (SFR::Pin<PIN_MOTOR_PWM>::PORT_IO_ADDR()), "I" (SFR::Pin<PIN_MOTOR_PWM>::PINbit()));     // digital write low
 }
 
 inline void setupMotorPwm()
 {
-    // #if DEBUG_MOTOR_SPEED
-    //     Serial.printf_P(PSTR("timer=%u\n"), digitalPinToTimer(11));
-    // #endif
-    asm volatile ("cbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_MOTOR_PWM_PORT)), "I" (PIN_MOTOR_PWM_BIT));     // digital write low
-    asm volatile ("sbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_MOTOR_PWM_DDR)), "I" (PIN_MOTOR_PWM_BIT));      // pin mode
-    PIN_MOTOR_PWM_OCR = 0;
+    asm volatile ("cbi %0, %1" :: "I" (SFR::Pin<PIN_MOTOR_PWM>::PORT_IO_ADDR()), "I" (SFR::Pin<PIN_MOTOR_PWM>::PINbit()));     // digital write low
+    asm volatile ("sbi %0, %1" :: "I" (SFR::Pin<PIN_MOTOR_PWM>::DDR_IO_ADDR()), "I" (SFR::Pin<PIN_MOTOR_PWM>::PINbit()));      // pin mode
+    SFR::Pin<PIN_MOTOR_PWM>::OCR() = 0;
 }
 
 inline void stopMotorAtomic()
@@ -123,13 +111,13 @@ inline void stopMotorAtomic()
 // PWM must be enabled
 inline void setMotorPWM_timer(uint8_t pwm)
 {
-    PIN_MOTOR_PWM_OCR = pwm; // analog write
+    SFR::Pin<PIN_MOTOR_PWM>::OCR() = pwm; // analog write
 }
 
 // returns 0 if the motor is off and 255 if running at 100% duty cycle
 inline uint8_t getMotorPWM_timer()
 {
-    return PIN_MOTOR_PWM_OCR;
+    return SFR::Pin<PIN_MOTOR_PWM>::OCR();
 }
 
 // use stopMotor() for pwm = 0
@@ -140,8 +128,8 @@ inline void setMotorPWM(uint8_t pwm)
     }
     else if (pwm == 255) {
         PIN_MOTOR_DISABLE_PWM();
-        PIN_MOTOR_PWM_OCR = 255;
-        asm volatile ("sbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_MOTOR_PWM_PORT)), "I" (PIN_MOTOR_PWM_BIT)); // digital write high
+        SFR::Pin<PIN_MOTOR_PWM>::OCR() = 255;
+        asm volatile ("sbi %0, %1" :: "I" (SFR::Pin<PIN_MOTOR_PWM>::PORT_IO_ADDR()), "I" (SFR::Pin<PIN_MOTOR_PWM>::PINbit())); // digital write high
     }
     else {
         setMotorPWM_timer(pwm);
@@ -161,17 +149,14 @@ inline void setMotorPWMAtomic(uint8_t pwm)
 // pin to enable the brake. it basically shorts the motor wires for slow current decay
 // it is important that the mosfets are turned off before the break is engaged + a short delay depending
 // on the mosfet driver. having the mosfets on and the brake engaged will cause a dead short
-#define PIN_BRAKE_PIN                           PIND
-#define PIN_BRAKE_PORT                          PORTD
-#define PIN_BRAKE_DDR                           DDRD
-#define PIN_BRAKE_BIT                           PIND7
+#define PIN_BRAKE                               7
 
 inline bool isBrakeOn()
 {
     asm volatile goto (
         "sbic %0, %1\n\t"
         "rjmp %l[BRAKE_ENABLED]\n\t"
-        :: "I" (_SFR_IO_ADDR(PIN_BRAKE_PIN)), "I" (PIN_BRAKE_BIT) :: BRAKE_ENABLED
+        :: "I" (SFR::Pin<PIN_BRAKE>::PIN_IO_ADDR()), "I" (SFR::Pin<PIN_BRAKE>::PINbit()) :: BRAKE_ENABLED
     );
     return false;
 
@@ -181,18 +166,18 @@ BRAKE_ENABLED:
 
 inline void setBrakeOn()
 {
-    asm volatile ("sbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_BRAKE_PORT)), "I" (PIN_BRAKE_BIT));
+    asm volatile ("sbi %0, %1" :: "I" (SFR::Pin<PIN_BRAKE>::PORT_IO_ADDR()), "I" (SFR::Pin<PIN_BRAKE>::PINbit()));
 }
 
 inline void setBrakeOff()
 {
-    asm volatile ("cbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_BRAKE_PORT)), "I" (PIN_BRAKE_BIT));
+    asm volatile ("cbi %0, %1" :: "I" (SFR::Pin<PIN_BRAKE>::PORT_IO_ADDR()), "I" (SFR::Pin<PIN_BRAKE>::PINbit()));
 }
 
 inline void setupBrake()
 {
     setBrakeOff();
-    asm volatile ("sbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_BRAKE_DDR)), "I" (PIN_BRAKE_BIT));
+    asm volatile ("sbi %0, %1" :: "I" (SFR::Pin<PIN_BRAKE>::DDR_IO_ADDR()), "I" (SFR::Pin<PIN_BRAKE>::PINbit()));
 }
 
 // D5/PD5/9
@@ -223,9 +208,19 @@ inline void setupLedPwm()
 // this is a voltage regulatur, not constant current. the circuit has been modified to provide constant current,
 // but due to the output capacitor the dimming range should be limited to 90-93% PWM. above 90% the current increases
 // pretty non linear. i had best resuts with 120, 180 and 240Hz. lower frequencies provider a better linear dimming curve
+#ifndef LED_MIN_PWM
 #define LED_MIN_PWM                             32
-#define LED_MAX_PWM                             240     // more than 240 does not increase brightness much for my LEDs
+#endif
+
+// more than 240 does not increase brightness much for my LEDs
+#ifndef LED_MAX_PWM
+#define LED_MAX_PWM                             240
+#endif
+
+// fade time in seconds
+#ifndef LED_FADE_TIME
 #define LED_FADE_TIME                           10
+#endif
 
 #if LED_MIN_PWM < 5
 #error increase min. pwm
@@ -264,7 +259,6 @@ inline void analogWriteLedPwm(uint8_t pwm)
 
 inline void setupCurrentLimitPwm()
 {
-    asm volatile ("sbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_CURRENT_LIMIT_PWM_PORT)), "I" (PIN_CURRENT_LIMIT_PWM_BIT));     // digital write high
     asm volatile ("sbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_CURRENT_LIMIT_PWM_DDR)), "I" (PIN_CURRENT_LIMIT_PWM_BIT));      // pin mode
 }
 
@@ -284,28 +278,40 @@ inline void analogWriteCurrentLimitPwm(uint8_t pwm)
     }
 }
 
-// // D10/PB2/14
-// // pin to disable the current limit
-// #define PIN_CURRENT_LIMIT_OVERRIDE_PIN          PINB
-// #define PIN_CURRENT_LIMIT_OVERRIDE_PORT         PORTB
-// #define PIN_CURRENT_LIMIT_OVERRIDE_DDR          DDRB
-// #define PIN_CURRENT_LIMIT_OVERRIDE_BIT          PINB2
-
 // D12/PB4/MISO
 // signal from comparator when the current limit has been triggered
-#define PIN_CURRENT_LIMIT_INDICATOR_PINNO       12
-#define PIN_CURRENT_LIMIT_INDICATOR_PIN         PINB
-#define PIN_CURRENT_LIMIT_INDICATOR_PORT        PORTB
+#define PIN_CURRENT_LIMIT_INDICATOR             12
+// #define PIN_CURRENT_LIMIT_INDICATOR_PIN         PINB
+// #define PIN_CURRENT_LIMIT_INDICATOR_PORT        PORTB
 #define PIN_CURRENT_LIMIT_INDICATOR_PCHS_PORT   PIN_CHANGED_STATE_PORTB
 #define PIN_CURRENT_LIMIT_INDICATOR_DDR         DDRB
-#define PIN_CURRENT_LIMIT_INDICATOR_BIT         PINB4
+// #define PIN_CURRENT_LIMIT_INDICATOR_BIT         PINB4
+// #define PIN_CURRENT_LIMIT_INDICATOR_PCMSK       PCMSK0
+#if HAVE_CURRENT_LIMIT
+#define PIN_CURRENT_LIMIT_INDICATOR_PCICR_BV    _BV(0)
+#else
+#define PIN_CURRENT_LIMIT_INDICATOR_PCICR_BV    0
+#endif
 
+inline void currentLimitDisableInterrupt()
+{
+    SFR::Pin<PIN_CURRENT_LIMIT_INDICATOR>::PCMSK() &= ~_BV(SFR::Pin<PIN_CURRENT_LIMIT_INDICATOR>::PINbit());
+    // PIN_CURRENT_LIMIT_INDICATOR_PCMSK &= ~_BV(PIN_CURRENT_LIMIT_INDICATOR_PIN);
+}
+
+inline void currentLimitEnableInterrupt()
+{
+    // PIN_CURRENT_LIMIT_INDICATOR_PCMSK |= _BV(PIN_CURRENT_LIMIT_INDICATOR_PIN);
+    SFR::Pin<PIN_CURRENT_LIMIT_INDICATOR>::PCMSK() |= _BV(SFR::Pin<PIN_CURRENT_LIMIT_INDICATOR>::PINbit());
+}
+
+// active low
 inline bool isCurrentLimitTripped()
 {
     asm volatile goto (
-        "sbic %0, %1\n\t"
+        "sbis %0, %1\n\t"
         "rjmp %l[LIMIT]\n\t"
-        :: "I" (_SFR_IO_ADDR(PIN_CURRENT_LIMIT_INDICATOR_PIN)), "I" (PIN_CURRENT_LIMIT_INDICATOR_BIT) :: LIMIT
+        :: "I" (SFR::Pin<PIN_CURRENT_LIMIT_INDICATOR>::PIN_IO_ADDR()), "I" (SFR::Pin<PIN_CURRENT_LIMIT_INDICATOR>::PINbit()) :: LIMIT
     );
     return false;
 
@@ -325,39 +331,44 @@ LIMIT:
 // D9/PB1/13
 #define PIN_BUTTON1                             9
 #define PIN_BUTTON1_PORT                        PIN_CHANGED_STATE_PORTB
-#define PIN_BUTTON1_BIT                         PINB1
+#define PIN_BUTTON1_PCMSK                       PCMSK0
+#define PIN_BUTTON1_PCICR_BV                    _BV(0)
 
 // D4/PD4/2
 #define PIN_BUTTON2                             4
 #define PIN_BUTTON2_PORT                        PIN_CHANGED_STATE_PORTD
-#define PIN_BUTTON2_BIT                         PIND4
+#define PIN_BUTTON2_PCMSK                       PCMSK2
+#define PIN_BUTTON2_PCICR_BV                    _BV(2)
 
 // D2/PD2/32
 #define PIN_ROTARY_ENC_CLK                      2
 #define PIN_ROTARY_ENC_CLK_PORT                 PIN_CHANGED_STATE_PORTD
-#define PIN_ROTARY_ENC_CLK_BIT                  PIND2
-#define PIN_ROTARY_ENC_CLK_PIN                  PIND
+#define PIN_ROTARY_ENC_CLK_PCMSK                PCMSK2
+#define PIN_ROTARY_ENC_CLK_PCICR_BV             _BV(2)
 
 // D3/PD3/1
 #define PIN_ROTARY_ENC_DT                       3
 #define PIN_ROTARY_ENC_DT_PORT                  PIN_CHANGED_STATE_PORTD
-#define PIN_ROTARY_ENC_DT_BIT                   PIND3
-#define PIN_ROTARY_ENC_DT_PIN                   PIND
+#define PIN_ROTARY_ENC_DT_PIN_PCMSK             PCMSK2
+#define PIN_ROTARY_ENC_DT_PIN_PCICR_BV          _BV(2)
+
 
 inline uint8_t readRotaryEncoderPinStates()
 {
+
+
     register uint8_t ret = 0;
     asm volatile goto (
         "sbis %0, %1\n\t"
         "rjmp %l[PIN1_LOW]\n\t"
-        :: "I" (_SFR_IO_ADDR(PIN_ROTARY_ENC_CLK_PIN)), "I" (PIN_ROTARY_ENC_CLK_BIT) :: PIN1_LOW
+        :: "I" (SFR::Pin<PIN_ROTARY_ENC_CLK>::PIN_IO_ADDR()), "I" (SFR::Pin<PIN_ROTARY_ENC_CLK>::PINbit()) :: PIN1_LOW
     );
     ret = static_cast<uint8_t>(Encoder::PinStatesType::P1_HIGH);
 PIN1_LOW:
     asm volatile goto (
         "sbis %0, %1\n\t"
         "rjmp %l[PIN2_LOW]\n\t"
-        :: "I" (_SFR_IO_ADDR(PIN_ROTARY_ENC_DT_PIN)), "I" (PIN_ROTARY_ENC_DT_BIT) :: PIN2_LOW
+        :: "I" (SFR::Pin<PIN_ROTARY_ENC_DT>::PIN_IO_ADDR()), "I" (SFR::Pin<PIN_ROTARY_ENC_DT>::PINbit()) :: PIN2_LOW
     );
     ret |= static_cast<uint8_t>(Encoder::PinStatesType::P2_HIGH);
 PIN2_LOW:
@@ -369,7 +380,7 @@ PIN2_LOW:
 #define PIN_CHANGED_STATE_PORTC                 1
 #define PIN_CHANGED_STATE_PORTD                 2
 
-#define PIN_CHANGED_STATE_IS_PORT(port)         ((PIN_BUTTON1_PORT == port) || (PIN_BUTTON2_PORT == port) || (PIN_ROTARY_ENC_PORT_CLK == port) || (PIN_ROTARY_ENC_PORT_DT == port))
+#define PIN_CHANGED_STATE_IS_PORT(port)         ((PIN_BUTTON1_PORT == port) || (PIN_BUTTON2_PORT == port) || (PIN_ROTARY_ENC_PORT_CLK == port) || (PIN_ROTARY_ENC_PORT_DT == port) || (PIN_CURRENT_LIMIT_INDICATOR_PCHS_PORT == port))
 
 #define PIN_CHANGED_STATE_HAVE_PORTB            PIN_CHANGED_STATE_IS_PORT(PIN_CHANGED_STATE_PORTB)
 #define PIN_CHANGED_STATE_HAVE_PORTC            PIN_CHANGED_STATE_IS_PORT(PIN_CHANGED_STATE_PORTC)
@@ -507,27 +518,21 @@ extern PinChangedState lastState;
 
 // A1/PC1/24
 // indicator LED for over current
-#define PIN_CURRENT_LIMIT_LED_PORT              PORTC
-#define PIN_CURRENT_LIMIT_LED_PIN               PINC
-#define PIN_CURRENT_LIMIT_LED_DDR               DDRC
-#define PIN_CURRENT_LIMIT_LED_BIT               PINC1
-#define PIN_CURRENT_LIMIT_LED_PINNO             A1
-
+#define PIN_CURRENT_LIMIT_LED_PINNO             PIN_A1
 
 inline void setCurrentLimitLedOff()
 {
-    asm volatile ("cbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_CURRENT_LIMIT_LED_PORT)), "I" (PIN_CURRENT_LIMIT_LED_BIT));
+    asm volatile ("cbi %0, %1" :: "I" (SFR::Pin<PIN_CURRENT_LIMIT_LED_PINNO>::PORT_IO_ADDR()), "I" (SFR::Pin<PIN_CURRENT_LIMIT_LED_PINNO>::PINbit()));
 }
 
 inline void setCurrentLimitLedOn()
 {
-    asm volatile ("sbi %0, %1" :: "I" (_SFR_IO_ADDR(PIN_CURRENT_LIMIT_LED_PORT)), "I" (PIN_CURRENT_LIMIT_LED_BIT));
+    asm volatile ("sbi %0, %1" :: "I" (SFR::Pin<PIN_CURRENT_LIMIT_LED_PINNO>::PORT_IO_ADDR()), "I" (SFR::Pin<PIN_CURRENT_LIMIT_LED_PINNO>::PINbit()));
 }
 
 inline void setupCurrentLimitLed()
 {
-    setCurrentLimitLedOff();
-    pinMode(PIN_CURRENT_LIMIT_LED_PINNO, OUTPUT);
+    asm volatile ("sbi %0, %1" :: "I" (SFR::Pin<PIN_CURRENT_LIMIT_LED_PINNO>::DDR_IO_ADDR()), "I" (SFR::Pin<PIN_CURRENT_LIMIT_LED_PINNO>::PINbit()));
 }
 
 // A0/PC0/23
@@ -586,14 +591,36 @@ namespace ADCRef {
 }
 
 // min. duty cycle after the current limit has been tripped
+#ifndef CURRENT_LIMIT_MIN_DUTY_CYCLE
 #define CURRENT_LIMIT_MIN_DUTY_CYCLE            8
+#endif
+
 #if CURRENT_LIMIT_MIN_DUTY_CYCLE == 0 || CURRENT_LIMIT_MIN_DUTY_CYCLE == 255
 #error Must not be 0 or 255
+#elif CURRENT_LIMIT_MIN_DUTY_CYCLE > 128
+#error make sure this setting is correct
 #endif
+
 // current limit settings value
-#define CURRENT_LIMIT_MIN                       3           // ~0.63A
-#define CURRENT_LIMIT_MAX                       224         // ~35A
-#define CURRENT_LIMIT_DISABLED                  255
+#ifndef CURRENT_LIMIT_MIN
+#define CURRENT_LIMIT_MIN                       2           // ~0.3A see ILimit::kMinCurrentA
+#endif
+
+#ifndef CURRENT_LIMIT_MAX
+#define CURRENT_LIMIT_MAX                       253         // ~39A see ILimit::kMaxCurrentA
+#endif
+
+namespace ILimit {
+
+    static constexpr uint8_t kLimitedDutyCycle = CURRENT_LIMIT_MIN_DUTY_CYCLE;
+    static constexpr uint8_t kMin = CURRENT_LIMIT_MIN;
+    static constexpr uint8_t kMax = CURRENT_LIMIT_MAX;
+    static constexpr uint8_t kDisabled = 255;
+
+    static constexpr float kMinCurrentA = kMin * DAC::kPwmCurrentMultiplier;
+    static constexpr float kMaxCurrentA = kMax * DAC::kPwmCurrentMultiplier;
+
+}
 
 #if HAVE_LED_POWER
 
@@ -820,7 +847,7 @@ namespace VoltageDetection {
 #define EEPROM_MAGIC                            0xf1c9a548
 
 enum class ControlModeEnum : uint8_t {
-    DUTY_CYCLE = 0,
+    PWM = 0,
     PID,
 };
 
@@ -893,8 +920,8 @@ extern UIConfigData ui_data;
 #include "interrupt_push_button.h"
 
 extern Menu menu;
-extern InterruptPushButton<PIN_BUTTON1_PORT, _BV(PIN_BUTTON1_BIT)> button1;
-extern InterruptPushButton<PIN_BUTTON2_PORT, _BV(PIN_BUTTON2_BIT)> button2;
+extern InterruptPushButton<PIN_BUTTON1_PORT, SFR::Pin<PIN_BUTTON1>::PINmask()> button1;
+extern InterruptPushButton<PIN_BUTTON2_PORT, SFR::Pin<PIN_BUTTON2>::PINmask()> button2;
 
 inline void display_message(const char *message, uint16_t time, uint8_t size = 2, size_t len = ~0U)
 {
