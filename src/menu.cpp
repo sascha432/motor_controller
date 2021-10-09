@@ -39,9 +39,7 @@ void rotary_button_released(Button& btn, uint16_t duration)
             switch(data.pidConfig()) {
                 case PidConfigEnum::SAVE:
                 case PidConfigEnum::RESTORE:
-                    if (update_motor_settings(1)) {
-                        ui_data.refreshDisplay();
-                    }
+                    update_motor_settings(1);
                     break;
                 default:
                     break;
@@ -125,9 +123,7 @@ void read_rotary_encoder()
     else if (menu.isActive()) { // sub menus
         switch(menu.getPosition()) {
             case MenuEnum::MENU_SPEED:
-                if (!update_motor_settings(value)) {
-                    return;
-                }
+                update_motor_settings(value);
                 break;
             #if HAVE_LED
                 case MenuEnum::MENU_LED:
@@ -173,8 +169,6 @@ void read_rotary_encoder()
     }
     else {
         // main screen
-        if (update_motor_settings(value)) {
-            ui_data.refreshDisplay();
-        }
+        update_motor_settings(value);
     }
 }

@@ -40,7 +40,7 @@ public:
     static constexpr uint16_t kAdcValues = 1024;
     // amount of readings before switching to the next pin
     // the first result after switching is discarded
-    static constexpr uint8_t kAverageSampleCount = 1;
+    static constexpr uint8_t kAverageSampleCount = 4;
 
     static_assert(kAverageSampleCount >= 1, "kAverageSampleCount must be 1 or greater");
     static_assert(kAverageSampleCount < ((1UL << (sizeof(uint16_t) << 3)) / kAdcValues), "reduce kAverageSampleCount to fit into uint16_t (kAdcValues * kAverageSampleCount <= 0xffff)");
@@ -132,11 +132,17 @@ inline void ADCInterrupt::_selectNextSourcePin()
     // store collected values
     auto tmp = _sum;
     _results[_analogSource] = tmp;
-    #if HAVE_VOLTAGE_DETECTION
-        if (_analogSource == static_cast<uint8_t>(AnalogPinType::VOLTAGE)) {
-            _voltageAverage = ((_voltageAverage * 64) + (static_cast<uint32_t>(tmp) << 8)) / 65;
-        }
-    #endif
+    switch(_analogSource) {
+        #if HAVE_VOLTAGE_DETECTION
+            case static_cast<uint8_t>(AnalogPinType::VOLTAGE):
+                _voltageAverage = ((_voltageAverage * 64) + (static_cast<uint32_t>(tmp) << 8)) / 65;
+                break;
+        #endif
+        // #if HAVE_CURRENT_DETECTION
+        //     case static_cast<uint8_t>(AnalogPinType::CURRENT):
+        //         break;
+        // #endif
+    }
     _sum = 0;
 
     // reset counter

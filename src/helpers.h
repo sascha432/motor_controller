@@ -287,7 +287,7 @@ inline uint16_t micros16()
 inline void readStringUntil(char *begin, char *end, uint16_t timeout = 1000)
 {
     char ch = 0;
-    uint32_t start = millis();
+    auto start = millis();
     while((begin < end) && ((millis() - start) < timeout) && (ch != '\n')) {
         if (Serial.available()) {
             ch = Serial.read();

@@ -642,6 +642,30 @@ namespace ILimit {
 // website to create polynominal regression functions from a few samples
 // https://arachnoid.com/polysolve/index.html
 
+// different LED
+// 24 2
+// 29 24
+// 32 54
+// 44 149
+// 55 198
+// 66 255
+// 76 310
+// 89 380
+// 99 441
+// 111 507
+// 121 577
+// 132 650
+// 143 725
+// 153 800
+// 166 888
+// 176 970
+// 189 1070
+// 198 1134
+// 210 1225
+// 222 1319
+// 234 1411
+// 244 1478
+
 
 // pass the PWM value as x and get mW
 #define LED_POWER_mW(pwm)                       static_cast<uint16_t>((pwm < LED_MIN_PWM) ? 0 : led_power_polynomial_regress(std::min<int>(255, pwm)))
@@ -649,12 +673,9 @@ namespace ILimit {
 inline float led_power_polynomial_regress(uint8_t pwm)
 {
     static constexpr float pgm_terms[] PROGMEM = {
-        -7.0283732122754344e+001,
-        1.9031563900783787e+001,
-        -3.7251068238367246e-001,
-        5.2481034665014231e-003,
-        -2.7738833439970790e-005,
-        5.1992243727621910e-008
+        -1.0886948487701962e+002,
+        4.9110880735262219e+000,
+        6.7445445681739435e-003
     };
     float t = 1;
     float r = 0;
@@ -705,10 +726,9 @@ namespace Timeouts {
 
     // milliseconds
 
-    // display version
     // this needs to be at least 750ms, otherwise the OLED display is not ready
     // try to increase the value if there is any issues with a blank display
-    static constexpr uint16_t kBootDelay = 1000;
+    static constexpr uint16_t kBootInitDisplayDelay = 2500;
 
     // time to display version during boot
     static constexpr uint16_t kVersion = 1000;
@@ -750,7 +770,7 @@ namespace Timeouts {
 #define RPM_MAX                                 4500
 
 #define STALL_TIME_MIN                          125
-#define STALL_TIME_MAX                          10000
+#define STALL_TIME_MAX                          5000
 
 // RPM sensing
 #define TIMER1_PRESCALER                        1

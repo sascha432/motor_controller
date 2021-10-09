@@ -16,8 +16,10 @@ public:
     uint16_t max_stall_time;
     PidSettings pid_settings;
     uint8_t max_pwm;
-    uint16_t rpm_per_volt;
     MotorStatusEnum _motorStatus;
+    #if HAVE_RPM_PER_VOLT
+        uint16_t rpm_per_volt;
+    #endif
 
     constexpr size_t size() const {
         return sizeof(*this);

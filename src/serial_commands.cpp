@@ -45,16 +45,7 @@ void serial_commands()
             #if 0
                 #if HAVE_LED_POWER
                     case 'l': {
-                            if (data._ledBrightness < LED_MIN_PWM) {
-                                data._ledBrightness = LED_MIN_PWM;
-                            }
-                            else if (data._ledBrightness == LED_MAX_PWM) {
-                                data._ledBrightness = LED_MIN_PWM - 1;
-                            }
-                            else {
-                                data._ledBrightness = std::min(data._ledBrightness + ((data._ledBrightness >= 230) ? 1 : (data._ledBrightness >= 200) ? 4 : 16), LED_MAX_PWM);
-                            }
-                            Serial.printf_P(PSTR("led %u pwm %umW\n"), data._ledBrightness, LED_POWER_mW(data._ledBrightness));
+                            Serial.printf_P(PSTR("led %u pwm %umW pwm=%u\n"), data.getLedBrightness(), LED_POWER_mW(data.getLedBrightness()), data.getLedBrightness());
                         }
                         break;
                 #endif

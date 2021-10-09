@@ -71,9 +71,21 @@ void menu_display_submenu()
                 strcpy_P(message, motor.isVelocityMode() ? PSTR("Velocity") : PSTR("PWM"));
                 break;
             #if HAVE_LED
-                case MenuEnum::MENU_LED:
+                case MenuEnum::MENU_LED: {
+                    #if HAVE_LED_POWER
+                        PrintBuffer buf(message, sizeof(message));
+                        buf.print(LED_POWER_mW(data.getLedBrightness()) / 1000.0, 3);
+                        buf.print('W');
+                        constexpr uint8_t y = SCREEN_HEIGHT - FONT_HEIGHT - 4;
+                        uint8_t x = SCREEN_WIDTH - (strlen(message) * FONT_WIDTH);
+                        display.setTextSize(1);
+                        display.setCursor(x, y);
+                        display.print(message);
+                        *message = 0;
+                    #endif
+
                     _ledBrightness_str(message, sizeof(message));
-                    break;
+                } break;
             #endif
             #if HAVE_CURRENT_LIMIT
                 case MenuEnum::MENU_CURRENT:
@@ -130,7 +142,7 @@ void menu_display_submenu()
     display.display();
 }
 
-bool update_motor_settings(int16_t value)
+bool _update_motor_settings(int16_t value)
 {
     if (value) {
         switch(data.pidConfig()) {
@@ -156,4 +168,11 @@ bool update_motor_settings(int16_t value)
         return true;
     }
     return false;
+}
+
+void update_motor_settings(int16_t value)
+{
+    if (_update_motor_settings(value)) {
+        ui_data.refreshDisplay();
+    }
 }

@@ -34,7 +34,7 @@ void setup_display()
             setCurrentLimitLedOff();
         }
     }
-    while((time = (millis16() - start)) < Timeouts::kBootDelay);
+    while((time = (millis16() - start)) < Timeouts::kBootInitDisplayDelay);
 
     Wire.begin();
     Wire.setClock(400000);

@@ -32,6 +32,7 @@ EEPROMData &EEPROMData::operator=(const ConfigData &data)
 
     set_point_rpm = data.getSetPointRPM();
     set_point_pwm = data.getSetPointDutyCycle();
+    _motorStatus = data.getDisplayMotorStatus();
     #if HAVE_LED
         _ledBrightness = data.getLedBrightness();
     #endif
@@ -44,7 +45,6 @@ EEPROMData &EEPROMData::operator=(const ConfigData &data)
     #if HAVE_RPM_PER_VOLT
         rpm_per_volt = data.getRpmPerVolt();
     #endif
-    _motorStatus = data._motorStatus;
     return *this;
 }
 
@@ -52,6 +52,7 @@ ConfigData &ConfigData::operator=(const EEPROMData &eeprom_data)
 {
     setSetPointDutyCycle(eeprom_data.set_point_pwm);
     setSetPointRPM(eeprom_data.set_point_rpm);
+    setDisplayMotorStatus(eeprom_data._motorStatus);
     #if HAVE_LED
         _ledBrightness = eeprom_data._ledBrightness;
         _ledBrightnessPwm = 0;
@@ -67,7 +68,6 @@ ConfigData &ConfigData::operator=(const EEPROMData &eeprom_data)
     #if HAVE_RPM_PER_VOLT
         data.setRpmPerVolt(eeprom_data.rpm_per_volt);
     #endif
-    data._motorStatus = _motorStatus;
     return *this;
 }
 

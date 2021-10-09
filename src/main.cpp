@@ -42,13 +42,11 @@ Menu menu;
 void read_eeprom()
 {
     EEPROMData eeprom_data;
-    EEPROM.begin();
     EEPROM.get(0, eeprom_data);
     if (eeprom_data.magic == EEPROM_MAGIC) {
         data = eeprom_data;
         pid.setPidValues(eeprom_data.pid_settings);
     }
-    EEPROM.end();
 }
 
 void write_eeprom(const __FlashStringHelper *message)
@@ -88,7 +86,7 @@ void _ledBrightness_str(char *message, uint8_t size)
     else {
         PrintBuffer buf(message, size);
         buf.print(data.getLedBrightessPercent(), 1);
-        buf.print('%');
+        buf.println('%');
     }
 }
 

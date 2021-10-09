@@ -9,6 +9,7 @@
   - Fixed LED brightness display
   - Removed all dynamic memory allocations
   - Menu to select displaying Watt/Amps while the motor is running
+  - Reduced overshoot of the PID controller after the current limit has been triggered
 
 ## 1.0.4
 
