@@ -6,6 +6,7 @@
   - Inverted current limit signal to match PCB Rev1.5
   - Improved current limit
   - Displaying average voltage to get rid of ADC noise
+  - Fixed LED brightness display
 
 ## 1.0.4
 

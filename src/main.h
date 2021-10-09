@@ -78,6 +78,11 @@
 #define HAVE_LED_POWER                          0
 #endif
 
+#if !HAVE_LED
+#undef HAVE_LED_POWER
+#define HAVE_LED_POWER 0
+#endif
+
 // pins
 
 // D11/PB3/15

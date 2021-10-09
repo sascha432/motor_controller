@@ -65,7 +65,9 @@ public:
         }
 
         float getLedBrightessPercent() const {
-            return (_ledBrightness * 100) / static_cast<float>(LED_MAX_PWM);
+            static constexpr float kRange = (LED_MAX_PWM - LED_MIN_PWM);
+            static constexpr float kOffset = ((LED_MAX_PWM - LED_MIN_PWM) / 100) + 1;
+            return ((_ledBrightness - LED_MIN_PWM + kOffset) * 100) / static_cast<float>(kRange + kOffset);
         }
 
     #endif
