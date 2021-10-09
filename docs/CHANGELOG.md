@@ -7,6 +7,8 @@
   - Improved current limit
   - Displaying average voltage to get rid of ADC noise
   - Fixed LED brightness display
+  - Removed all dynamic memory allocations
+  - Menu to select displaying Watt/Amps while the motor is running
 
 ## 1.0.4
 

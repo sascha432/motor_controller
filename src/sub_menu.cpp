@@ -97,13 +97,24 @@ void menu_display_submenu()
                             message[10] = 0;
                         }
                         else {
-                            strcpy_P(message, _T(DISABLED));
+                            strcpy_P(message, PSTR("DISABLED"));
                         }
                     }
                     break;
             #endif
             case MenuEnum::MENU_DISPLAY:
-                data.toggleDisplayMotorStatus();
+                switch(data.getDisplayMotorStatus()) {
+                    case MotorStatusEnum::WATT:
+                        strcpy_P(message, PSTR("Watt"));
+                        break;
+                    case MotorStatusEnum::AMPERE:
+                        strcpy_P(message, PSTR("Ampere"));
+                        break;
+                    default:
+                    case MotorStatusEnum::OFF:
+                        strcpy_P(message, PSTR("OFF"));
+                        break;
+                }
                 break;
             case MenuEnum::MENU_RESTORE:
                 strcpy_P(message, PSTR("Press to restore"));

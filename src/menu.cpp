@@ -153,15 +153,15 @@ void read_rotary_encoder()
                 motor.setMaxStallTime(std::clamp<int16_t>(motor.getMaxStallTime() + KNOB_GET_VALUE(value, KNOB_VALUE_SPEED), STALL_TIME_MIN, STALL_TIME_MAX));
                 break;
             #if HAVE_RPM_PER_VOLT
-            case MenuEnum::MENU_MOTOR:
-                data.setRpmPerVolt(std::clamp<int16_t>(data.getRpmPerVolt() + KNOB_GET_VALUE(value, KNOB_VALUE_SPEED), 0, 32500));
-                break;
+                case MenuEnum::MENU_MOTOR:
+                    data.setRpmPerVolt(std::clamp<int16_t>(data.getRpmPerVolt() + KNOB_GET_VALUE(value, KNOB_VALUE_SPEED), 0, 32500));
+                    break;
             #endif
-            case MenuEnum::MENU_DISPLAY:
-                motor.toggleMode();
-                break;
             case MenuEnum::MENU_MODE:
                 motor.toggleMode();
+                break;
+            case MenuEnum::MENU_DISPLAY:
+                data.toggleDisplayMotorStatus();
                 break;
             case MenuEnum::MENU_BRAKE:
                 motor.enableBrake(!motor.isBrakeEnabled());
