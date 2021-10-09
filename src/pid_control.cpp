@@ -111,6 +111,13 @@ void PidController::updateTicks(int32_t ticks)
     _lastUpdate.start(_micros);
 
     float error = ticks - data.getSetPointRPMTicks(); // values are inverted
+    #if HAVE_CURRENT_LIMIT
+        // reduce overshoot after the current limit has been triggered
+        if (_currentLimitmultiplier < 1) {
+            error *= _currentLimitmultiplier;
+            _currentLimitmultiplier += kCurrentLimitIncrement;
+        }
+    #endif
     float output = _settings.Kp * error;
     if (_settings.Ki) {
         delta_t = calc_delta_t(time);

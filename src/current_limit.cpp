@@ -11,7 +11,7 @@
 
 CurrentLimit current_limit;
 
-uint8_t CurrentLimit::_getDutyCycle()
+uint8_t CurrentLimit::_getDutyCycle() const
 {
     if (motor.isVelocityMode()) {
         return pid.getDutyCycle();

@@ -13,6 +13,8 @@ class PidController {
 public:
     // extra bits for the duty cycle
     static constexpr uint8_t kDutyCycleShift = 7;
+    // increment for the current limit multiplier tom reduce overshoot
+    static constexpr float kCurrentLimitIncrement = 0.0001;
 
 public:
     PidController();
@@ -47,11 +49,18 @@ public:
     // get duty cycle of the PID controller
     uint8_t getDutyCycle() const;
 
+    #if HAVE_CURRENT_LIMIT
+        void resetCurrentLimitMultiplier();
+    #endif
+
 private:
     float _integral;
     uint16_t _dutyCycle;
     int32_t _previousError;
     MicrosTimer _lastUpdate;
+    #if HAVE_CURRENT_LIMIT
+        float _currentLimitmultiplier;
+    #endif
 };
 
 inline PidController::PidController() :
@@ -83,5 +92,12 @@ inline uint8_t PidController::getDutyCycle() const
 {
     return _dutyCycle >> kDutyCycleShift;
 }
+
+#if HAVE_CURRENT_LIMIT
+    inline void PidController::resetCurrentLimitMultiplier()
+    {
+        _currentLimitmultiplier = 0;
+    }
+#endif
 
 extern PidController pid;

@@ -6,6 +6,7 @@
 
 #include <Arduino.h>
 #include "main.h"
+#include "pid_control.h"
 
 #if HAVE_CURRENT_LIMIT
 
@@ -45,7 +46,7 @@ public:
     void disable();
 
     // get duty cycle with current limit
-    uint8_t getDutyCycle(uint8_t duty_cycle);
+    uint8_t getDutyCycle(uint8_t duty_cycle) const;
 
     // check if the limit is disabled
     bool isDisabled() const;
@@ -76,7 +77,7 @@ private:
         SIGNAL_LOW
     };
 
-    uint8_t _getDutyCycle();
+    uint8_t _getDutyCycle() const;
     void _enableTimer();
     void _disableTimer();
     void _resetTimer();
@@ -103,7 +104,6 @@ inline void CurrentLimit::begin()
     setupCurrentLimitLed();
 
     asm volatile ("cbi %0, %1" :: "I" (SFR::Pin<PIN_CURRENT_LIMIT_INDICATOR>::DDR_IO_ADDR()), "I" (SFR::Pin<PIN_CURRENT_LIMIT_INDICATOR>::PINbit()));      // pin mode
-
 }
 
 inline void CurrentLimit::enable()
@@ -182,7 +182,7 @@ inline void CurrentLimit::_resetTimer()
     OCR1A = TCNT1 + kCurrentLimitTicks;
 }
 
-inline uint8_t CurrentLimit::getDutyCycle(uint8_t dutyCycle)
+inline uint8_t CurrentLimit::getDutyCycle(uint8_t dutyCycle) const
 {
     if (_limit == ILimit::kDisabled) {
         return dutyCycle;
@@ -204,6 +204,7 @@ inline void CurrentLimit::currentLimitTripped()
     currentLimitDisableInterrupt();
     setCurrentLimitLedOn();
     _limitMultiplier = 0;
+    pid.resetCurrentLimitMultiplier();
     _state = CurrentLimitStateEnum::SIGNAL_HIGH;
     _resetTimer();
     _enableTimer();
