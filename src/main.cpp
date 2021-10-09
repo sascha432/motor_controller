@@ -127,8 +127,6 @@ void set_version(char *buffer)
     sprintf_P(buffer, PSTR("Version %u.%u.%u"), VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
 }
 
-bool displayInitialized = false;
-
 bool setup_display_begin()
 {
 
@@ -144,7 +142,6 @@ bool setup_display_begin()
 
 void setup_display_init()
 {
-    displayInitialized = true;
     display.setTextColor(WHITE);
     display.cp437(true);
 
@@ -173,6 +170,10 @@ void setup_display()
 
     if (setup_display_begin()) {
         setup_display_init();
+    }
+    else {
+        delay(500);
+        restart_device();
     }
 }
 
@@ -246,16 +247,6 @@ void refresh_display()
     }
     else if (!menu.isOpen() && ui_data.doRefreshDisplay())  {
         ui_data.updateTimer();
-
-        if (!displayInitialized) { //TODO
-            setCurrentLimitLedOn();
-            delay(1000);
-            setCurrentLimitLedOff();
-            Serial.println(F("DISPLAY REINIT"));
-            if (setup_display_begin()) {
-                setup_display_init();
-            }
-        }
 
         display.clearDisplay();
         display.setTextSize(1);
