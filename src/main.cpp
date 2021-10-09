@@ -34,29 +34,10 @@ InterruptPushButton<PIN_BUTTON2_PORT, SFR::Pin<PIN_BUTTON2>::PINmask()> button2(
 #    error invalid settings
 #endif
 
-
 static const char menuItemsString[] PROGMEM = { MENU_ITEMS_STRING };
 
 Adafruit_SSD1306 display(OLED_ADDRESS, OLED_RESET_PIN);
 Menu menu;
-
-void UIConfigData::loop()
-{
-    auto millis = millis16();
-    if (millis - _updateUITimer >= Timeouts::Display::kRefresh) {
-        _updateUITimer = millis;
-        updateRpmAndDutyCycle();
-    }
-}
-
-void UIConfigData::updateRpmAndDutyCycle()
-{
-    auto events = rpm_sense.getEvents();
-    if (events._count) {
-        _displayRpm = (static_cast<uint32_t>(_displayRpm) + events._ticks) / (events._count + 1);
-    }
-    _dutyCycleAvg = ((static_cast<uint16_t>(_dutyCycleAvg) << 2) + getMotorPWM_timer()) / 5;
-}
 
 void read_eeprom()
 {
@@ -96,7 +77,6 @@ void set_version(char *buffer)
 {
     sprintf_P(buffer, PSTR("Version %u.%u.%u"), VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
 }
-
 
 #if HAVE_LED
 

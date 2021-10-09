@@ -112,3 +112,21 @@ void ConfigData::loop()
     }
 #endif
 }
+
+void UIConfigData::loop()
+{
+    auto millis = millis16();
+    if (millis - _updateUITimer >= Timeouts::Display::kRefresh) {
+        _updateUITimer = millis;
+        updateRpmAndDutyCycle();
+    }
+}
+
+void UIConfigData::updateRpmAndDutyCycle()
+{
+    auto events = rpm_sense.getEvents();
+    if (events._count) {
+        _displayRpm = (static_cast<uint32_t>(_displayRpm) + events._ticks) / (events._count + 1);
+    }
+    _dutyCycleAvg = ((static_cast<uint16_t>(_dutyCycleAvg) << 2) + getMotorPWM_timer()) / 5;
+}

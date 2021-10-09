@@ -11,6 +11,8 @@
 #include "helpers.h"
 
 #if DEBUG
+
+#if 0
 extern uint8_t _debug_level;
 void debug_print_millis();
 
@@ -31,6 +33,7 @@ void debug_print_millis();
 #define _D(...) ;
 #define debug_printf_P(...)
 #define debug_printf(...)
+#endif
 #endif
 
 namespace std {
@@ -404,9 +407,6 @@ inline void swap(T &a, T &b) {
     a = b;
     b = c;
 };
-
-
-size_t Serial_flush_input();
 
 inline size_t Serial_flush_input() {
     size_t n = 0;

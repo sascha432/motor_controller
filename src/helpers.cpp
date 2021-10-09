@@ -2,8 +2,22 @@
  * Author: sascha_lammers@gmx.de
  */
 
-// #include <avr/boot.h>
 #include "helpers.h"
+
+#if 1
+
+// saves 668 byte
+// malloc is not used anywhere else
+
+size_t Print::__printf(vsnprint_t func, const char *format, va_list arg)
+{
+    char buf[128];
+    int len = func(buf, sizeof(buf), format, arg);
+    write(buf, len);
+    return len;
+}
+
+#else
 
 size_t Print::__printf(vsnprint_t func, const char *format, va_list arg)
 {
@@ -24,6 +38,8 @@ size_t Print::__printf(vsnprint_t func, const char *format, va_list arg)
     return len;
 }
 
+#endif
+
 size_t Print::printf(const char *format, ...)
 {
     va_list arg;
@@ -42,7 +58,7 @@ size_t Print::printf_P(PGM_P format, ...)
     return result;
 }
 
-#if DEBUG
+#if DEBUG && 0
 
 uint8_t _debug_level = 0;
 
