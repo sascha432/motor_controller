@@ -217,9 +217,8 @@ inline void setupLedPwm()
 #define LED_MIN_PWM                             32
 #endif
 
-// more than 240 does not increase brightness much for my LEDs
 #ifndef LED_MAX_PWM
-#define LED_MAX_PWM                             240
+#define LED_MAX_PWM                             250
 #endif
 
 // fade time in seconds
@@ -360,8 +359,6 @@ LIMIT:
 
 inline uint8_t readRotaryEncoderPinStates()
 {
-
-
     register uint8_t ret = 0;
     asm volatile goto (
         "sbis %0, %1\n\t"
@@ -701,6 +698,9 @@ inline float led_power_polynomial_regress(uint8_t pwm)
 
 #define KNOB_GET_VALUE(value, speed)            menu.getKnobValue(value, speed, 1)
 
+#define FONT_WIDTH  6
+#define FONT_HEIGHT 8
+
 namespace Timeouts {
 
     // milliseconds
@@ -877,14 +877,13 @@ enum class PidConfigEnum : uint8_t {
 };
 
 enum class MotorStatusEnum : uint8_t {
-    // OFF = 0, // remove comment to allow turning it off
+    OFF = 0, // remove comment to allow turning it off
     AMPERE,
     WATT,
     MAX
 };
 
 class ConfigData;
-
 
 #include "pid_settings.h"
 #include "eeprom_data.h"
@@ -909,11 +908,10 @@ void display_print_hl(bool highlight, _Ta text, char end = ' ')
     display.print(end);
 }
 
-void menu_display_submenu();
-void refresh_display();
 void write_eeprom(const __FlashStringHelper *message = nullptr);
-void read_rotary_encoder();
-void update_duty_cycle();
+void set_version(char *buffer);
+void _ledBrightness_str(char *message, uint8_t size);
+void current_limit_str(char *message, uint8_t size);
 
 class ConfigData;
 class UIConfigData;
@@ -921,36 +919,14 @@ class UIConfigData;
 extern ConfigData data;
 extern UIConfigData ui_data;
 
+#include "display.h"
 #include "menu.h"
+#include "sub_menu.h"
 #include "interrupt_push_button.h"
 
 extern Menu menu;
 extern InterruptPushButton<PIN_BUTTON1_PORT, SFR::Pin<PIN_BUTTON1>::PINmask()> button1;
 extern InterruptPushButton<PIN_BUTTON2_PORT, SFR::Pin<PIN_BUTTON2>::PINmask()> button2;
-
-inline void display_message(const char *message, uint16_t time, uint8_t size = 2, size_t len = ~0U)
-{
-    if (len == ~0U) {
-        len = strlen(message);
-    }
-    const uint8_t y = (SCREEN_HEIGHT / 2) - (size * FONT_HEIGHT) + 3;
-    const uint8_t x = (SCREEN_WIDTH / 2) - (len * size * (FONT_WIDTH / 2));
-    display.clearDisplay();
-    display.setCursor(x, y);
-    display.setTextSize(size);
-    display.print(message);
-    display.display();
-    ui_data.setRefreshTimeoutOnce(time);
-}
-
-inline void display_message(const __FlashStringHelper *message, uint16_t time, uint8_t size = 2)
-{
-    const size_t len = strlen_P(reinterpret_cast<PGM_P>(message));
-    const size_t strSize = len + 1;
-    char buf[strSize];
-    memcpy_P(buf, message, strSize);
-    display_message(buf, time, size, len);
-}
 
 inline void restart_device()
 {

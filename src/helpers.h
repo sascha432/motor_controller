@@ -271,7 +271,6 @@ namespace std {
 
 }
 
-
 inline uint16_t millis16()
 {
     return static_cast<uint16_t>(millis());
@@ -282,6 +281,18 @@ inline uint16_t micros16()
     return static_cast<uint16_t>(micros());
 }
 
+inline void readStringUntil(char *begin, char *end, uint16_t timeout = 1000)
+{
+    char ch = 0;
+    uint32_t start = millis();
+    while((begin < end) && ((millis() - start) < timeout) && (ch != '\n')) {
+        if (Serial.available()) {
+            ch = Serial.read();
+            *begin++ = ch;
+        }
+    }
+    *begin = 0;
+}
 
 class PrintBuffer : public Print {
 public:

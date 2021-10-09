@@ -7,9 +7,6 @@
 #include <Adafruit_SSD1306.h>
 #include <Arduino.h>
 
-#define FONT_WIDTH  6
-#define FONT_HEIGHT 8
-
 enum class MenuEnum : uint8_t {
     MENU_SPEED = 0,
     MENU_MODE,
@@ -25,11 +22,49 @@ enum class MenuEnum : uint8_t {
 #if HAVE_RPM_PER_VOLT
     MENU_MOTOR,
 #endif
+    MENU_DISPLAY,
     MENU_INFO,
     MENU_RESTORE,
     MENU_EXIT,
     MENU_COUNT
 };
+
+#if HAVE_CURRENT_LIMIT
+#    define CURRENT_LIMIT_MENU(x) x
+#else
+#    define CURRENT_LIMIT_MENU(x)
+#endif
+
+#if HAVE_RPM_PER_VOLT
+#    define RPM_PER_VOLT_MENU(x) x
+#else
+#    define RPM_PER_VOLT_MENU(x)
+#endif
+
+#if HAVE_LED
+#    define LED_MENU(x) x
+#else
+#    define LED_MENU(x)
+#endif
+
+#define MENU_ITEMS_STRING \
+    "Speed\0"             \
+    "Mode\0"              \
+    LED_MENU("LED Brightness\0" ) \
+    CURRENT_LIMIT_MENU("Current Limit\0") \
+    "Max PWM\0"           \
+    "Stall Time\0"        \
+    "Brake\0"             \
+    RPM_PER_VOLT_MENU("Motor RPM/Volt\0") \
+    "Display\0"           \
+    "Info\0"              \
+    "Restore Defaults\0"  \
+    "Exit & Save\0"       \
+    "\0"
+
+void rotary_button_released(Button& btn, uint16_t duration);
+void start_stop_button_pressed(Button& btn);
+void read_rotary_encoder();
 
 class Menu {
 public:
@@ -181,7 +216,7 @@ inline bool Menu::isMainMenuActive() const
 inline void Menu::close()
 {
     closeNoRefresh();
-    refresh_display();
+    display_refresh();
     ui_data.setRefreshTimeoutOnce(Timeouts::Menu::kClose);
 }
 
